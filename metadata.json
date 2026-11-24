@@ -1,0 +1,6 @@
+{
+  "name": "Ledgerly",
+  "description": "Calm, private personal expense manager with fast 3-tap logging, accounts, budgets, recurring bills, savings goals, insights, and an optional AI assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
