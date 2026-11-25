@@ -47,7 +47,7 @@ class GroupsViewModel @Inject constructor(
     private val socialRepository: SocialRepository,
     private val createGroupUseCase: CreateGroupUseCase,
     private val simplifySettlementsUseCase: SimplifySettlementsUseCase,
-    userPreferencesRepository: UserPreferencesRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _error = MutableStateFlow<String?>(null)

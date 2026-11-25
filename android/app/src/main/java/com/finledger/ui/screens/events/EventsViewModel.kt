@@ -54,7 +54,7 @@ class EventsViewModel @Inject constructor(
     private val simplifySettlementsUseCase: SimplifySettlementsUseCase,
     getAccountsUseCase: GetAccountsUseCase,
     categoryRepository: CategoryRepository,
-    userPreferencesRepository: UserPreferencesRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _error = MutableStateFlow<String?>(null)

@@ -16,7 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.finledger.domain.usecase.MonthlySummary
+import com.finledger.domain.model.MonthlySummary
 import com.finledger.domain.usecase.NetWorthBreakdown
 import com.finledger.domain.usecase.PortfolioOverview
 import com.finledger.domain.util.MoneyFormatter
