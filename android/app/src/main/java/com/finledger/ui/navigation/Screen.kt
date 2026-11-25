@@ -12,6 +12,9 @@ sealed class Screen(val route: String) {
     data object More : Screen("more")
 
     // Transaction flows (Phase 1)
+    data object QuickAdd : Screen("quick_add?tab={tab}") {
+        fun createRoute(tab: String = "EXPENSE") = "quick_add?tab=$tab"
+    }
     data object AddExpense : Screen("add_expense")
     data object AddIncome : Screen("add_income")
     data object AddTransfer : Screen("add_transfer")

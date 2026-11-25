@@ -57,6 +57,7 @@ import com.finledger.domain.usecase.ImportRowStatus
 import com.finledger.domain.util.DateFormatter
 import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.EmptyStateView
+import com.finledger.ui.screens.security.LocalSuppressAppLock
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -69,6 +70,7 @@ fun ImportExportScreen(
     viewModel: DataManagementViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val suppressAppLock = LocalSuppressAppLock.current
 
     val csvExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
@@ -158,7 +160,10 @@ fun ImportExportScreen(
                             color = FinLedgerTheme.colors.inkMuted48,
                         )
                         Button(
-                            onClick = { csvImportLauncher.launch(arrayOf("text/*", "text/csv")) },
+                            onClick = {
+                                suppressAppLock()
+                                csvImportLauncher.launch(arrayOf("text/*", "text/csv"))
+                            },
                             shape = MaterialTheme.shapes.extraLarge,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Import CSV File") }
@@ -181,12 +186,18 @@ fun ImportExportScreen(
                     Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         Text("Export Reports", style = MaterialTheme.typography.headlineMedium)
                         Button(
-                            onClick = { csvExportLauncher.launch("finledger_transactions.csv") },
+                            onClick = {
+                                suppressAppLock()
+                                csvExportLauncher.launch("finledger_transactions.csv")
+                            },
                             shape = MaterialTheme.shapes.extraLarge,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Export CSV Statement") }
                         OutlinedButton(
-                            onClick = { pdfExportLauncher.launch("finledger_report.pdf") },
+                            onClick = {
+                                suppressAppLock()
+                                pdfExportLauncher.launch("finledger_report.pdf")
+                            },
                             shape = MaterialTheme.shapes.extraLarge,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Export PDF Statement") }
@@ -204,7 +215,10 @@ fun ImportExportScreen(
                     Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         Text("Full JSON Backup & Restore", style = MaterialTheme.typography.headlineMedium)
                         Button(
-                            onClick = { jsonBackupLauncher.launch("finledger_backup.json") },
+                            onClick = {
+                                suppressAppLock()
+                                jsonBackupLauncher.launch("finledger_backup.json")
+                            },
                             shape = MaterialTheme.shapes.extraLarge,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Create Full JSON Backup") }
@@ -653,6 +667,7 @@ fun RestoreScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val suppressAppLock = LocalSuppressAppLock.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::loadBackupForPreview)
     }
@@ -687,7 +702,10 @@ fun RestoreScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
             Button(
-                onClick = { picker.launch(arrayOf("application/json", "*/*")) },
+                onClick = {
+                    suppressAppLock()
+                    picker.launch(arrayOf("application/json", "*/*"))
+                },
                 shape = MaterialTheme.shapes.extraLarge,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Select Backup JSON File") }

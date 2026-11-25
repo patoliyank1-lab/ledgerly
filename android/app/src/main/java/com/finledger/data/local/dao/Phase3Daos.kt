@@ -60,6 +60,9 @@ interface LoanDao {
 
     @Query("UPDATE loans SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE loans SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao
@@ -102,6 +105,9 @@ interface BillDao {
 
     @Query("UPDATE bills SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE bills SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao
@@ -126,6 +132,9 @@ interface BudgetDao {
 
     @Query("UPDATE budgets SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE budgets SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao
@@ -153,5 +162,8 @@ interface SavingsGoalDao {
 
     @Query("UPDATE savings_goals SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE savings_goals SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 

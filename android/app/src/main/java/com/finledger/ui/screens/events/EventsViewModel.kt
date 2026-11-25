@@ -218,6 +218,10 @@ class EventsViewModel @Inject constructor(
         }
     }
 
+    suspend fun restoreSharedExpenseDirect(expenseId: Long) {
+        socialRepository.restoreSharedExpense(expenseId)
+    }
+
     fun saveSharedExpense(
         totalAmountPaise: Long,
         description: String,

@@ -62,7 +62,7 @@ fun LoansScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Borrowing & Lending", style = MaterialTheme.typography.headlineMedium) },
+                title = { Text("Loans", style = MaterialTheme.typography.headlineMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -117,8 +117,8 @@ fun LoansScreen(
             }
 
             TabRow(selectedTabIndex = tabIndex, containerColor = MaterialTheme.colorScheme.surface) {
-                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Money Lent") })
-                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Money Borrowed") })
+                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Lent") })
+                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Borrowed") })
             }
 
             if (filtered.isEmpty()) {

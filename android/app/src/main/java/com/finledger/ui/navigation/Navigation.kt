@@ -84,10 +84,9 @@ import com.finledger.ui.screens.settings.ManageCategoriesScreen
 import com.finledger.ui.screens.settings.ManageTagsScreen
 import com.finledger.ui.screens.settings.NotificationSettingsScreen
 import com.finledger.ui.screens.settings.SettingsScreen
-import com.finledger.ui.screens.transactions.AddExpenseScreen
-import com.finledger.ui.screens.transactions.AddIncomeScreen
-import com.finledger.ui.screens.transactions.AddTransferScreen
 import com.finledger.ui.screens.transactions.EditTransactionScreen
+import com.finledger.ui.screens.transactions.QuickAddScreen
+import com.finledger.ui.screens.transactions.QuickAddTab
 import com.finledger.ui.screens.transactions.TransactionDetailScreen
 import com.finledger.ui.screens.transactions.TransactionsScreen
 import com.finledger.ui.theme.FinLedgerTheme
@@ -106,12 +105,9 @@ fun FinLedgerNavHost(
         // Primary tabs (Phase 1 wired)
         composable(Screen.Dashboard.route) {
             DashboardScreen(
-                onAddExpense = { navController.navigate(Screen.AddExpense.route) },
-                onAddIncome = { navController.navigate(Screen.AddIncome.route) },
-                onAddTransfer = { navController.navigate(Screen.AddTransfer.route) },
-                onAddSharedExpense = { navController.navigate(Screen.AddSharedExpense.createRoute()) },
-                onAddLoan = { navController.navigate(Screen.AddLoan.route) },
-                onRecordSettlement = { navController.navigate(Screen.RecordSettlement.createRoute()) },
+                onAddExpense = { navController.navigate(Screen.QuickAdd.createRoute("EXPENSE")) },
+                onAddIncome = { navController.navigate(Screen.QuickAdd.createRoute("INCOME")) },
+                onAddTransfer = { navController.navigate(Screen.QuickAdd.createRoute("TRANSFER")) },
                 onSeeAllTransactions = {
                     navController.navigate(Screen.Transactions.route) {
                         popUpTo(navController.graph.findStartDestination().id) {
@@ -132,9 +128,9 @@ fun FinLedgerNavHost(
         }
         composable(Screen.Transactions.route) {
             TransactionsScreen(
-                onAddExpense = { navController.navigate(Screen.AddExpense.route) },
-                onAddIncome = { navController.navigate(Screen.AddIncome.route) },
-                onAddTransfer = { navController.navigate(Screen.AddTransfer.route) },
+                onAddExpense = { navController.navigate(Screen.QuickAdd.createRoute("EXPENSE")) },
+                onAddIncome = { navController.navigate(Screen.QuickAdd.createRoute("INCOME")) },
+                onAddTransfer = { navController.navigate(Screen.QuickAdd.createRoute("TRANSFER")) },
                 onOpenTransactionDetail = { id -> navController.navigate(Screen.TransactionDetail.createRoute(id)) },
             )
         }
@@ -153,14 +149,23 @@ fun FinLedgerNavHost(
         }
 
         // Phase 1 routes
+        composable(
+            route = Screen.QuickAdd.route,
+            arguments = listOf(navArgument("tab") { type = NavType.StringType; defaultValue = "EXPENSE" }),
+        ) { entry ->
+            QuickAddScreen(
+                initialTab = QuickAddTab.fromArg(entry.arguments?.getString("tab")),
+                onBack = { navController.popBackStack() },
+            )
+        }
         composable(Screen.AddExpense.route) {
-            AddExpenseScreen(onBack = { navController.popBackStack() })
+            QuickAddScreen(initialTab = QuickAddTab.EXPENSE, onBack = { navController.popBackStack() })
         }
         composable(Screen.AddIncome.route) {
-            AddIncomeScreen(onBack = { navController.popBackStack() })
+            QuickAddScreen(initialTab = QuickAddTab.INCOME, onBack = { navController.popBackStack() })
         }
         composable(Screen.AddTransfer.route) {
-            AddTransferScreen(onBack = { navController.popBackStack() })
+            QuickAddScreen(initialTab = QuickAddTab.TRANSFER, onBack = { navController.popBackStack() })
         }
         composable(
             route = Screen.TransactionDetail.route,
@@ -589,7 +594,7 @@ fun MoreHubScreen(
             MoreMenuItem("Person-wise Balances", "Consolidated receivables & payables", Icons.Outlined.AccountBalance, Screen.Balances.route),
             MoreMenuItem("Groups", "Shared friend & household groups", Icons.Outlined.Groups, Screen.Groups.route),
             MoreMenuItem("Events", "Trips, dinners, celebrations", Icons.Outlined.Event, Screen.Events.route),
-            MoreMenuItem("Borrowing & Lending", "Loans, EMIs & repayments", Icons.Outlined.Money, Screen.Loans.route),
+            MoreMenuItem("Loans", "Lent, borrowed, EMIs & repayments", Icons.Outlined.Money, Screen.Loans.route),
         ),
         "Planning & Insights" to listOf(
             MoreMenuItem("Bills & Subscriptions", "Upcoming & recurring bills", Icons.Outlined.ReceiptLong, Screen.Bills.route),
@@ -601,13 +606,8 @@ fun MoreHubScreen(
             MoreMenuItem("Financial Calendar", "Combined financial schedule", Icons.Outlined.CalendarMonth, Screen.FinancialCalendar.route),
         ),
         "Data & Tools" to listOf(
-            MoreMenuItem("Import, Export & Backup", "CSV, PDF reports, JSON backup", Icons.Outlined.Backup, Screen.ImportExport.route),
             MoreMenuItem("Document Vault", "Receipts, invoices, agreements", Icons.Outlined.FolderOpen, Screen.DocumentVault.route),
-            MoreMenuItem("Activity History", "Audit trail of edits & deletions", Icons.Outlined.History, Screen.AuditHistory.route),
-            MoreMenuItem("Archive", "Archived accounts & groups", Icons.Outlined.Archive, Screen.Archive.route),
-            MoreMenuItem("Trash", "Recover soft-deleted records", Icons.Outlined.DeleteOutline, Screen.Trash.route),
-            MoreMenuItem("Notifications", "Reminders & alert preferences", Icons.Outlined.Notifications, Screen.NotificationSettings.route),
-            MoreMenuItem("Settings", "Profile, currency, theme, security", Icons.Outlined.Settings, Screen.Settings.route),
+            MoreMenuItem("Settings", "Profile, currency, backup, recovery & notifications", Icons.Outlined.Settings, Screen.Settings.route),
         ),
     )
 

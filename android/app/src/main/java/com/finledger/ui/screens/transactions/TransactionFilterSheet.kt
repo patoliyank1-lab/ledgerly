@@ -151,6 +151,7 @@ fun TransactionFilterSheet(
                         dateError = null
                     },
                     label = if (startDateMs == null) "From (Any)" else "From",
+                    showQuickChips = false,
                     modifier = Modifier.weight(1f),
                 )
                 DatePickerField(
@@ -160,6 +161,7 @@ fun TransactionFilterSheet(
                         dateError = null
                     },
                     label = if (endDateMs == null) "To (Any)" else "To",
+                    showQuickChips = false,
                     modifier = Modifier.weight(1f),
                 )
             }

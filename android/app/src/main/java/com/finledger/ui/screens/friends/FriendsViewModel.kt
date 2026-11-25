@@ -168,10 +168,18 @@ class FriendsViewModel @Inject constructor(
         }
     }
 
+    suspend fun restorePersonDirect(personId: Long) {
+        socialRepository.restorePerson(personId)
+    }
+
     fun deleteSettlement(settlement: SettlementEntity) {
         viewModelScope.launch {
             socialRepository.deleteSettlement(settlement)
         }
+    }
+
+    suspend fun restoreSettlementDirect(settlement: SettlementEntity) {
+        socialRepository.restoreSettlement(settlement)
     }
 }
 

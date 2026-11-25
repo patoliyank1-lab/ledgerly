@@ -48,8 +48,25 @@ import com.finledger.data.local.entity.SettlementDirection
 import com.finledger.data.local.entity.SettlementEntity
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
+
+/**
+ * Formats an explicit outstanding-balance warning for an unsettled contact, or null when settled (`0L`).
+ */
+fun formatPersonBalanceWarning(
+    personName: String,
+    netBalancePaise: Long,
+    currency: String,
+): String? {
+    val label = personName.ifBlank { "Person" }
+    return when {
+        netBalancePaise > 0L -> "$label owes you ${MoneyFormatter.format(netBalancePaise, currency)}"
+        netBalancePaise < 0L -> "You owe $label ${MoneyFormatter.format(-netBalancePaise, currency)}"
+        else -> null
+    }
+}
 
 @Composable
 fun PersonDetailScreen(
@@ -67,6 +84,7 @@ fun PersonDetailScreen(
     var showArchiveConfirm by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var inspectingSettlement by remember { mutableStateOf<SettlementEntity?>(null) }
+    val undoCoordinator = LocalUndoCoordinator.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.errorMessage) {
@@ -95,7 +113,22 @@ fun PersonDetailScreen(
                         IconButton(onClick = { showArchiveConfirm = true }) {
                             Icon(Icons.Outlined.Archive, contentDescription = "Archive person")
                         }
-                        IconButton(onClick = { showDeleteConfirm = true }) {
+                        IconButton(
+                            onClick = {
+                                val currentPerson = person ?: return@IconButton
+                                val netBalance = summary?.netBalancePaise ?: 0L
+                                if (netBalance != 0L) {
+                                    showDeleteConfirm = true
+                                } else {
+                                    viewModel.deletePerson(personId) {
+                                        undoCoordinator?.showDeleted(currentPerson.name) {
+                                            viewModel.restorePersonDirect(personId)
+                                        }
+                                        onBack()
+                                    }
+                                }
+                            },
+                        ) {
                             Icon(Icons.Outlined.Delete, contentDescription = "Delete person")
                         }
                     }
@@ -112,11 +145,11 @@ fun PersonDetailScreen(
         ) {
             item {
                 val net = summary?.netBalancePaise ?: 0L
-                val statusText = when {
-                    net > 0 -> "${person?.name ?: "Person"} owes you ${MoneyFormatter.format(net, state.primaryCurrency)}"
-                    net < 0 -> "You owe ${person?.name ?: "Person"} ${MoneyFormatter.format(-net, state.primaryCurrency)}"
-                    else -> "All settled up"
-                }
+                val statusText = formatPersonBalanceWarning(
+                    personName = person?.name ?: "Person",
+                    netBalancePaise = net,
+                    currency = state.primaryCurrency,
+                ) ?: "All settled up"
                 Surface(
                     color = FinLedgerTheme.colors.tileDark1,
                     contentColor = MaterialTheme.colorScheme.inverseOnSurface,
@@ -251,15 +284,35 @@ fun PersonDetailScreen(
     }
 
     if (showDeleteConfirm && person != null) {
+        val currentPerson = person!!
+        val net = summary?.netBalancePaise ?: 0L
+        val balanceText = formatPersonBalanceWarning(
+            personName = currentPerson.name,
+            netBalancePaise = net,
+            currency = state.primaryCurrency,
+        )
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete ${person!!.name}?") },
-            text = { Text("This contact will be moved to Trash.") },
+            title = { Text("Delete ${currentPerson.name}?") },
+            text = {
+                Text(
+                    if (balanceText != null) {
+                        "$balanceText. Deleting hides this contact and balance from active lists."
+                    } else {
+                        "This contact will be moved to Trash."
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showDeleteConfirm = false
-                        viewModel.deletePerson(personId, onDone = onBack)
+                        viewModel.deletePerson(personId) {
+                            undoCoordinator?.showDeleted(currentPerson.name) {
+                                viewModel.restorePersonDirect(personId)
+                            }
+                            onBack()
+                        }
                     },
                 ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
             },
@@ -286,6 +339,9 @@ fun PersonDetailScreen(
                 TextButton(
                     onClick = {
                         viewModel.deleteSettlement(st)
+                        undoCoordinator?.showDeleted("settlement") {
+                            viewModel.restoreSettlementDirect(st)
+                        }
                         inspectingSettlement = null
                     },
                 ) { Text("Delete", color = FinLedgerTheme.colors.negative) }

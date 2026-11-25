@@ -61,6 +61,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.finledger.data.local.entity.DocumentType
 import com.finledger.domain.util.DateFormatter
 import com.finledger.ui.components.EmptyStateView
+import com.finledger.ui.components.LocalUndoCoordinator
+import com.finledger.ui.screens.security.LocalSuppressAppLock
 import com.finledger.ui.screens.transactions.TransactionSearchBar
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
@@ -75,6 +77,7 @@ fun DocumentVaultScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val suppressAppLock = LocalSuppressAppLock.current
     var query by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf<DocumentType?>(null) }
     var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -111,7 +114,10 @@ fun DocumentVaultScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { picker.launch(arrayOf("image/*", "application/pdf")) },
+                onClick = {
+                    suppressAppLock()
+                    picker.launch(arrayOf("image/*", "application/pdf"))
+                },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ) {
@@ -157,7 +163,10 @@ fun DocumentVaultScreen(
                     title = "Vault is empty",
                     subtitle = "Store receipts, invoices, bank statements, loan agreements, and warranty docs offline.",
                     actionLabel = "Add Document",
-                    onAction = { picker.launch(arrayOf("image/*", "application/pdf")) },
+                    onAction = {
+                        suppressAppLock()
+                        picker.launch(arrayOf("image/*", "application/pdf"))
+                    },
                     modifier = Modifier.weight(1f),
                 )
             } else {
@@ -190,9 +199,6 @@ fun DocumentVaultScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = FinLedgerTheme.colors.inkMuted48,
                                     )
-                                }
-                                IconButton(onClick = { viewModel.deleteDocument(doc.id) }) {
-                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete", tint = FinLedgerTheme.colors.negative)
                                 }
                             }
                         }
@@ -261,6 +267,7 @@ fun DocumentViewerScreen(
     viewModel: DataManagementViewModel = hiltViewModel(),
 ) {
     val doc by viewModel.observeDocument(documentId).collectAsStateWithLifecycle()
+    val undoCoordinator = LocalUndoCoordinator.current
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -270,6 +277,21 @@ fun DocumentViewerScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    doc?.let { current ->
+                        IconButton(
+                            onClick = {
+                                viewModel.deleteDocument(current.id)
+                                undoCoordinator?.showDeleted(current.name) {
+                                    viewModel.restoreDocumentDirect(current.id)
+                                }
+                                onBack()
+                            },
+                        ) {
+                            Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete document")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),

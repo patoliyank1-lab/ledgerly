@@ -181,6 +181,10 @@ class GroupsViewModel @Inject constructor(
         }
     }
 
+    suspend fun restoreSharedExpenseDirect(expenseId: Long) {
+        socialRepository.restoreSharedExpense(expenseId)
+    }
+
     fun personName(id: Long, members: List<PersonEntity>): String {
         if (id == SplitCalculator.USER_PERSON_ID) return "You"
         return members.firstOrNull { it.id == id }?.name ?: "Person #$id"

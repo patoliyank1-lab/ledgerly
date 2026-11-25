@@ -140,6 +140,10 @@ class InvestmentsViewModel @Inject constructor(
         }
     }
 
+    suspend fun restoreInvestmentDirect(investmentId: Long) {
+        insightRepository.restoreInvestment(investmentId)
+    }
+
     fun clearError() {
         _error.value = null
     }

@@ -76,6 +76,9 @@ interface TransactionDao {
     @Query("UPDATE transactions SET isDeleted = 1, updatedAt = :updatedAt WHERE sharedExpenseId = :sharedExpenseId")
     suspend fun softDeleteBySharedExpenseId(sharedExpenseId: Long, updatedAt: Long = System.currentTimeMillis())
 
+    @Query("UPDATE transactions SET isDeleted = 0, updatedAt = :updatedAt WHERE sharedExpenseId = :sharedExpenseId")
+    suspend fun restoreBySharedExpenseId(sharedExpenseId: Long, updatedAt: Long = System.currentTimeMillis())
+
     @Query("SELECT * FROM transactions WHERE isDeleted = 0 AND type = :type AND date BETWEEN :startMs AND :endMs ORDER BY date DESC")
     suspend fun getByTypeInRange(type: TransactionType, startMs: Long, endMs: Long): List<TransactionEntity>
 }

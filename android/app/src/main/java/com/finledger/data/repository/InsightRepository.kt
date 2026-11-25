@@ -47,6 +47,7 @@ class InsightRepository @Inject constructor(
         investmentDao.insertTransaction(tx)
 
     suspend fun deleteInvestment(id: Long) = investmentDao.softDelete(id)
+    suspend fun restoreInvestment(id: Long) = investmentDao.restore(id)
 
     fun observeNetWorthSnapshots(): Flow<List<NetWorthSnapshotEntity>> = netWorthDao.observeSnapshots()
     suspend fun saveSnapshot(snapshot: NetWorthSnapshotEntity): Long = netWorthDao.insertSnapshot(snapshot)

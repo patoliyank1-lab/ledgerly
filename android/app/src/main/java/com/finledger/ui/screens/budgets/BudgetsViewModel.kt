@@ -94,6 +94,10 @@ class BudgetsViewModel @Inject constructor(
         viewModelScope.launch { commitmentRepository.deleteBudget(id) }
     }
 
+    suspend fun restoreBudgetDirect(id: Long) {
+        commitmentRepository.restoreBudget(id)
+    }
+
     fun saveGoal(
         existing: SavingsGoalEntity? = null,
         name: String,
@@ -123,6 +127,10 @@ class BudgetsViewModel @Inject constructor(
 
     fun deleteGoal(id: Long) {
         viewModelScope.launch { commitmentRepository.deleteSavingsGoal(id) }
+    }
+
+    suspend fun restoreGoalDirect(id: Long) {
+        commitmentRepository.restoreSavingsGoal(id)
     }
 
     fun contributeToGoal(goalId: Long, deltaPaise: Long) {

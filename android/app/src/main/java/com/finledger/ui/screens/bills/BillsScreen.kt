@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,7 +65,6 @@ fun BillsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var tabIndex by remember { mutableIntStateOf(0) }
     var payingBill by remember { mutableStateOf<BillEntity?>(null) }
-    var deletingBill by remember { mutableStateOf<BillEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val now = System.currentTimeMillis()
     val overdue = state.bills.filter { it.nextDueDateMs < now }
@@ -161,9 +159,6 @@ fun BillsScreen(
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 color = MaterialTheme.colorScheme.primary,
                                             )
-                                        }
-                                        IconButton(onClick = { deletingBill = bill }) {
-                                            Icon(Icons.Outlined.Delete, contentDescription = "Delete bill")
                                         }
                                         if (state.accounts.isNotEmpty()) {
                                             Button(
@@ -272,25 +267,6 @@ fun BillsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { payingBill = null }) { Text("Cancel") }
-            },
-        )
-    }
-
-    deletingBill?.let { bill ->
-        AlertDialog(
-            onDismissRequest = { deletingBill = null },
-            title = { Text("Delete ${bill.name}?") },
-            text = { Text("This bill reminder will be removed. Past payment transactions remain intact.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteBill(bill.id)
-                        deletingBill = null
-                    },
-                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletingBill = null }) { Text("Cancel") }
             },
         )
     }

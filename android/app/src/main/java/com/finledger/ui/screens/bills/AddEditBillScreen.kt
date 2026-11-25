@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -42,6 +43,7 @@ import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.CategoryPickerGrid
 import com.finledger.ui.components.DatePickerField
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -53,6 +55,7 @@ fun AddEditBillScreen(
     viewModel: BillsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val undoCoordinator = LocalUndoCoordinator.current
     val existing = remember(billId, state.bills) {
         billId?.let { id -> state.bills.firstOrNull { it.id == id } }
     }
@@ -101,6 +104,21 @@ fun AddEditBillScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (existing != null) {
+                        IconButton(
+                            onClick = {
+                                viewModel.deleteBill(existing.id)
+                                undoCoordinator?.showDeleted(existing.name) {
+                                    viewModel.restoreBillDirect(existing.id)
+                                }
+                                onBack()
+                            },
+                        ) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete bill")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -153,7 +171,7 @@ fun AddEditBillScreen(
                 }
             }
 
-            DatePickerField(dateMs = dueDateMs, onDateSelected = { dueDateMs = it }, label = "Next Due Date")
+            DatePickerField(dateMs = dueDateMs, onDateSelected = { dueDateMs = it }, label = "Next Due Date", showQuickChips = false)
 
             AccountPickerDropdown(
                 accounts = state.accounts,

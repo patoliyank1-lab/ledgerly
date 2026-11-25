@@ -29,6 +29,9 @@ interface DocumentDao {
 
     @Query("UPDATE documents SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE documents SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao

@@ -56,6 +56,9 @@ interface InvestmentDao {
 
     @Query("UPDATE investments SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE investments SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao

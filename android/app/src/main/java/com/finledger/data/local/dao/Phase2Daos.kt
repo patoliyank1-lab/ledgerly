@@ -42,6 +42,9 @@ interface PersonDao {
 
     @Query("UPDATE persons SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE persons SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao
@@ -96,6 +99,9 @@ interface GroupDao {
 
     @Query("UPDATE groups SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE groups SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao
@@ -150,6 +156,9 @@ interface EventDao {
 
     @Query("UPDATE events SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE events SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao
@@ -207,6 +216,9 @@ interface SharedExpenseDao {
 
     @Query("UPDATE shared_expenses SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE shared_expenses SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
 }
 
 @Dao
@@ -235,7 +247,13 @@ interface SettlementDao {
     @Query("UPDATE settlements SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
 
+    @Query("UPDATE settlements SET isDeleted = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
+
     @Query("UPDATE settlements SET isDeleted = 1 WHERE linkedTransactionId = :txId")
     suspend fun softDeleteByLinkedTransactionId(txId: Long)
+
+    @Query("UPDATE settlements SET isDeleted = 0 WHERE linkedTransactionId = :txId")
+    suspend fun restoreByLinkedTransactionId(txId: Long)
 }
 

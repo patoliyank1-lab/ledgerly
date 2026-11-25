@@ -50,6 +50,7 @@ import com.finledger.data.local.entity.TransactionType
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.AmountTextField
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -66,7 +67,7 @@ fun AccountDetailScreen(
     var showEditSheet by remember { mutableStateOf(false) }
     var showReconcileDialog by remember { mutableStateOf(false) }
     var showArchiveConfirm by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val undoCoordinator = LocalUndoCoordinator.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.errorMessage) {
@@ -97,7 +98,15 @@ fun AccountDetailScreen(
                         IconButton(onClick = { showArchiveConfirm = true }) {
                             Icon(Icons.Outlined.Archive, contentDescription = "Archive account")
                         }
-                        IconButton(onClick = { showDeleteConfirm = true }) {
+                        IconButton(
+                            onClick = {
+                                viewModel.deleteAccount(accountId)
+                                undoCoordinator?.showDeleted(item.account.name) {
+                                    viewModel.restoreAccountDirect(accountId)
+                                }
+                                onBack()
+                            },
+                        ) {
                             Icon(Icons.Outlined.Delete, contentDescription = "Delete account")
                         }
                     }
@@ -306,26 +315,6 @@ fun AccountDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showArchiveConfirm = false }) { Text("Cancel") }
-            },
-        )
-    }
-
-    if (showDeleteConfirm && item != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete ${item.account.name}?") },
-            text = { Text("This account will be moved to Trash and can be restored from Settings.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirm = false
-                        viewModel.deleteAccount(accountId)
-                        onBack()
-                    },
-                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
             },
         )
     }

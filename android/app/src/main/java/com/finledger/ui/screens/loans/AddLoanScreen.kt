@@ -102,13 +102,13 @@ fun AddLoanScreen(
                 FilterChip(
                     selected = type == LoanType.LENT,
                     onClick = { type = LoanType.LENT },
-                    label = { Text("Money Lent") },
+                    label = { Text("Lent") },
                     modifier = Modifier.weight(1f),
                 )
                 FilterChip(
                     selected = type == LoanType.BORROWED,
                     onClick = { type = LoanType.BORROWED },
-                    label = { Text("Money Borrowed") },
+                    label = { Text("Borrowed") },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -173,14 +173,15 @@ fun AddLoanScreen(
                     dateMs = expectedDateMs,
                     onDateSelected = { expectedDateMs = it },
                     label = "Expected Repayment / Due Date",
+                    showQuickChips = false,
                 )
             }
 
             Text("Repayment Frequency", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                listOf("NONE" to "Flexible / None", "ONE_TIME" to "One-time", "MONTHLY" to "Monthly", "QUARTERLY" to "Quarterly").forEach { (code, label) ->
+                listOf("NONE" to "Single / No schedule", "MONTHLY" to "Monthly", "QUARTERLY" to "Quarterly").forEach { (code, label) ->
                     FilterChip(
-                        selected = repaymentFrequency == code,
+                        selected = repaymentFrequency == code || (code == "NONE" && repaymentFrequency == "ONE_TIME"),
                         onClick = { repaymentFrequency = code },
                         label = { Text(label) },
                     )

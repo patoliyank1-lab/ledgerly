@@ -6,6 +6,9 @@ import com.finledger.data.local.entity.CategoryEntity
 import com.finledger.data.local.entity.TransactionEntity
 import com.finledger.data.local.entity.TransactionStatus
 import com.finledger.data.local.entity.TransactionType
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 data class AccountWithBalance(
     val account: AccountEntity,
@@ -56,6 +59,52 @@ data class TransactionWithDetails(
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+@Serializable
+data class QuickTransactionTemplate(
+    val id: String,
+    val label: String,
+    val type: TransactionType,
+    val amountPaise: Long,
+    val accountId: Long? = null,
+    val toAccountId: Long? = null,
+    val categoryId: Long? = null,
+    val merchantOrPayee: String = "",
+    val description: String = "",
+    val paymentMethod: String = "",
+    val location: String = "",
+    val notes: String = "",
+)
+
+object QuickTemplateCodec {
+    const val MAX_TEMPLATES = 20
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    fun decode(raw: String?): List<QuickTransactionTemplate> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return runCatching { json.decodeFromString<List<QuickTransactionTemplate>>(raw) }
+            .getOrElse { emptyList() }
+    }
+
+    fun encode(templates: List<QuickTransactionTemplate>): String =
+        json.encodeToString(templates)
+
+    fun addTemplate(
+        existing: List<QuickTransactionTemplate>,
+        template: QuickTransactionTemplate,
+    ): List<QuickTransactionTemplate> =
+        (listOf(template) + existing.filterNot { it.id == template.id }).take(MAX_TEMPLATES)
+
+    fun removeTemplate(
+        existing: List<QuickTransactionTemplate>,
+        templateId: String,
+    ): List<QuickTransactionTemplate> =
+        existing.filterNot { it.id == templateId }
+}
+
 data class UserPreferences(
     val userName: String = "Personal",
     val primaryCurrency: String = "INR",
@@ -64,11 +113,14 @@ data class UserPreferences(
     val onboardingCompleted: Boolean = false,
     val pinEnabled: Boolean = false,
     val biometricEnabled: Boolean = false,
+    val lockTimeoutSeconds: Int = 60,
     val notificationsEnabled: Boolean = true,
     val billRemindersEnabled: Boolean = true,
     val loanRemindersEnabled: Boolean = true,
     val budgetAlertsEnabled: Boolean = true,
     val autoBackupEnabled: Boolean = false,
+    val lastUsedAccountId: Long? = null,
+    val quickTemplates: List<QuickTransactionTemplate> = emptyList(),
 )
 
 /**

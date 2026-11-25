@@ -17,9 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -29,20 +26,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -56,7 +50,7 @@ fun TransactionDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val tx by viewModel.observeTransaction(transactionId).collectAsStateWithLifecycle()
     val auditLogs by viewModel.observeAuditHistory(transactionId).collectAsStateWithLifecycle()
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val undoCoordinator = LocalUndoCoordinator.current
 
     val accountName = tx?.let { t ->
         state.accounts.firstOrNull { it.account.id == t.accountId }?.account?.name ?: "Account #${t.accountId}"
@@ -83,7 +77,20 @@ fun TransactionDetailScreen(
                         IconButton(onClick = { onEdit(transactionId) }) {
                             Icon(Icons.Outlined.Edit, contentDescription = "Edit")
                         }
-                        IconButton(onClick = { showDeleteConfirm = true }) {
+                        IconButton(
+                            onClick = {
+                                val currentTx = tx ?: return@IconButton
+                                val label = currentTx.merchantOrPayee.ifBlank {
+                                    categoryName ?: currentTx.type.displayName
+                                }
+                                viewModel.deleteTransaction(transactionId) {
+                                    undoCoordinator?.showDeleted(label) {
+                                        viewModel.restoreTransactionDirect(transactionId)
+                                    }
+                                    onBack()
+                                }
+                            },
+                        ) {
                             Icon(
                                 Icons.Outlined.DeleteOutline,
                                 contentDescription = "Delete",
@@ -201,29 +208,6 @@ fun TransactionDetailScreen(
                 }
             }
         }
-    }
-
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete Transaction?") },
-            text = { Text("The transaction will be moved to Trash and your account balance will recalculate automatically.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteTransaction(transactionId) {
-                            showDeleteConfirm = false
-                            onBack()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = FinLedgerTheme.colors.negative),
-                    shape = MaterialTheme.shapes.extraLarge,
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
-            },
-        )
     }
 }
 

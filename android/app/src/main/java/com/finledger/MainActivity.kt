@@ -7,11 +7,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,11 +33,15 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.finledger.data.repository.UserPreferencesRepository
 import com.finledger.domain.model.UserPreferences
+import com.finledger.ui.components.LocalUndoCoordinator
+import com.finledger.ui.components.UndoCoordinator
+import com.finledger.ui.components.UndoSnackbarEffect
 import com.finledger.ui.navigation.FinLedgerBottomBar
 import com.finledger.ui.navigation.FinLedgerNavHost
 import com.finledger.ui.navigation.PrimaryBottomNavItems
 import com.finledger.ui.screens.security.AppLockManager
 import com.finledger.ui.screens.security.BiometricHelper
+import com.finledger.ui.screens.security.LocalSuppressAppLock
 import com.finledger.ui.screens.security.OnboardingFlow
 import com.finledger.ui.screens.security.PinUnlockOverlay
 import com.finledger.ui.screens.settings.shouldUseDarkTheme
@@ -74,17 +82,30 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            DisposableEffect(lifecycleOwner, prefsState?.pinEnabled) {
+            DisposableEffect(lifecycleOwner, prefsState?.pinEnabled, prefsState?.lockTimeoutSeconds) {
                 val observer = LifecycleEventObserver { _, event ->
+                    val currentPrefs = prefsState
                     if (event == Lifecycle.Event.ON_STOP && !isChangingConfigurations) {
-                        if (prefsState?.pinEnabled == true) {
-                            appLockManager.lockIfEnabled(true)
+                        appLockManager.onAppBackgrounded(pinEnabled = currentPrefs?.pinEnabled == true)
+                    } else if (event == Lifecycle.Event.ON_START && initialLockChecked && currentPrefs != null) {
+                        val wasLocked = appLockManager.isLocked.value
+                        appLockManager.onAppForegrounded(
+                            pinEnabled = currentPrefs.pinEnabled,
+                            timeoutSeconds = currentPrefs.lockTimeoutSeconds,
+                        )
+                        if (!wasLocked && appLockManager.isLocked.value) {
                             biometricPrompted = false
                         }
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
+
+            LaunchedEffect(isLocked) {
+                if (!isLocked) {
+                    biometricPrompted = false
+                }
             }
 
             val prefs = prefsState
@@ -100,6 +121,7 @@ class MainActivity : FragmentActivity() {
 
             val triggerBiometric: () -> Unit = {
                 if (prefs.biometricEnabled && BiometricHelper.isAvailable(this@MainActivity)) {
+                    appLockManager.suppressNextBackgroundLock()
                     BiometricHelper.authenticate(
                         activity = this@MainActivity,
                         onSuccess = { appLockManager.unlock() },
@@ -115,21 +137,25 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            FinLedgerTheme(darkTheme = prefs.themeMode.shouldUseDarkTheme()) {
-                when {
-                    isLocked && prefs.pinEnabled -> {
-                        PinUnlockOverlay(
-                            storedHash = pinHash,
-                            biometricEnabled = prefs.biometricEnabled,
-                            onRequestBiometric = triggerBiometric,
-                            onUnlocked = { appLockManager.unlock() },
-                        )
-                    }
-                    !prefs.onboardingCompleted -> {
-                        OnboardingFlow(onComplete = {})
-                    }
-                    else -> {
-                        FinLedgerAppShell()
+            CompositionLocalProvider(
+                LocalSuppressAppLock provides { appLockManager.suppressNextBackgroundLock() }
+            ) {
+                FinLedgerTheme(darkTheme = prefs.themeMode.shouldUseDarkTheme()) {
+                    when {
+                        isLocked && prefs.pinEnabled -> {
+                            PinUnlockOverlay(
+                                storedHash = pinHash,
+                                biometricEnabled = prefs.biometricEnabled,
+                                onRequestBiometric = triggerBiometric,
+                                onUnlocked = { appLockManager.unlock() },
+                            )
+                        }
+                        !prefs.onboardingCompleted -> {
+                            OnboardingFlow(onComplete = {})
+                        }
+                        else -> {
+                            FinLedgerAppShell()
+                        }
                     }
                 }
             }
@@ -143,32 +169,47 @@ fun FinLedgerAppShell() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = PrimaryBottomNavItems.any { it.route == currentRoute }
+    val undoCoordinator = remember { UndoCoordinator() }
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (showBottomBar) {
-                FinLedgerBottomBar(
-                    currentRoute = currentRoute,
-                    onSelectRoute = { route ->
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
+    UndoSnackbarEffect(
+        coordinator = undoCoordinator,
+        snackbarHostState = snackbarHostState,
+    )
+
+    CompositionLocalProvider(LocalUndoCoordinator provides undoCoordinator) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            snackbarHost = {
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = if (!showBottomBar) Modifier.navigationBarsPadding() else Modifier,
                 )
-            }
-        },
-    ) { innerPadding ->
-        FinLedgerNavHost(
-            navController = navController,
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding),
-        )
+            },
+            bottomBar = {
+                if (showBottomBar) {
+                    FinLedgerBottomBar(
+                        currentRoute = currentRoute,
+                        onSelectRoute = { route ->
+                            navController.navigate(route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                    )
+                }
+            },
+        ) { innerPadding ->
+            FinLedgerNavHost(
+                navController = navController,
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
+            )
+        }
     }
 }

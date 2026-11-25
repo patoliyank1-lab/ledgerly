@@ -147,5 +147,9 @@ class LoansViewModel @Inject constructor(
             onDone()
         }
     }
+
+    suspend fun restoreLoanDirect(loanId: Long) {
+        commitmentRepository.restoreLoan(loanId)
+    }
 }
 

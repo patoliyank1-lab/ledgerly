@@ -135,6 +135,10 @@ class AccountsViewModel @Inject constructor(
         }
     }
 
+    suspend fun restoreAccountDirect(accountId: Long) {
+        accountRepository.restore(accountId)
+    }
+
     fun clearError() {
         _error.value = null
     }

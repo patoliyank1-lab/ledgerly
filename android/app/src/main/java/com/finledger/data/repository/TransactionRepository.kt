@@ -153,6 +153,7 @@ class TransactionRepositoryImpl @Inject constructor(
 
     override suspend fun restore(id: Long) {
         transactionDao.setDeleted(id, false)
+        settlementDao.restoreByLinkedTransactionId(id)
         auditLogDao.insert(
             AuditLogEntity(entityType = "transaction", entityId = id, action = "RESTORE")
         )

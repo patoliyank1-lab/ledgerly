@@ -63,6 +63,7 @@ import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.DatePickerField
 import com.finledger.ui.components.EmptyStateView
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -356,7 +357,7 @@ fun InvestmentDetailScreen(
     val item = state.portfolio.items.firstOrNull { it.investment.id == investmentId }
     var showValDialog by remember { mutableStateOf(false) }
     var activeTradeType by remember { mutableStateOf<InvestmentTransactionType?>(null) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val undoCoordinator = LocalUndoCoordinator.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.errorMessage) {
@@ -379,7 +380,17 @@ fun InvestmentDetailScreen(
                 },
                 actions = {
                     if (item != null) {
-                        IconButton(onClick = { showDeleteConfirm = true }) {
+                        IconButton(
+                            onClick = {
+                                val label = item.investment.name.ifBlank { "investment" }
+                                viewModel.deleteInvestment(investmentId) {
+                                    undoCoordinator?.showDeleted(label) {
+                                        viewModel.restoreInvestmentDirect(investmentId)
+                                    }
+                                    onBack()
+                                }
+                            },
+                        ) {
                             Icon(Icons.Outlined.Delete, contentDescription = "Delete investment")
                         }
                     }
@@ -636,23 +647,6 @@ fun InvestmentDetailScreen(
                 ) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { activeTradeType = null }) { Text("Cancel") } },
-        )
-    }
-
-    if (showDeleteConfirm && item != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete ${item.investment.name}?") },
-            text = { Text("This investment will be removed from your active portfolio.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirm = false
-                        viewModel.deleteInvestment(investmentId, onDone = onBack)
-                    },
-                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
         )
     }
 }

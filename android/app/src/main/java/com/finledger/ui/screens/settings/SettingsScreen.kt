@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -64,7 +65,7 @@ fun SettingsScreen(
     val prefs = state.preferences
     var showNameDialog by remember { mutableStateOf(false) }
 
-    val currencies = listOf("INR", "USD", "EUR", "GBP", "AED", "SGD")
+    val currencies = MoneyFormatter.SUPPORTED_CURRENCIES
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -198,7 +199,7 @@ fun SettingsScreen(
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
                         SettingsNavRow("Backup & Export Settings", "JSON, CSV, PDF", onOpenBackup)
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
-                        SettingsNavRow("Activity History", "Audit trail of edits", onOpenAuditHistory)
+                        SettingsNavRow("Change Log", "Audit trail of edits", onOpenAuditHistory)
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
                         SettingsNavRow("Archived Records", "Archived accounts & groups", onOpenArchive)
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)

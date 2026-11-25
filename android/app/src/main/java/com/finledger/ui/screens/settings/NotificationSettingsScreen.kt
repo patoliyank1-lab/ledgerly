@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.finledger.ui.screens.security.LocalSuppressAppLock
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 import com.finledger.worker.ReminderScheduler
@@ -49,6 +50,7 @@ fun NotificationSettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val suppressAppLock = LocalSuppressAppLock.current
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -90,6 +92,7 @@ fun NotificationSettingsScreen(
                             onCheckedChange = { enabled ->
                                 viewModel.setNotificationsEnabled(enabled)
                                 if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    suppressAppLock()
                                     permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 }
                             },

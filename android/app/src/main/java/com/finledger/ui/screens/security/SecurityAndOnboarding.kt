@@ -14,9 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -27,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -35,6 +39,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -111,16 +116,69 @@ object BiometricHelper {
     }
 }
 
+val LocalSuppressAppLock = staticCompositionLocalOf<() -> Unit> { {} }
+
 @Singleton
 class AppLockManager @Inject constructor() {
     private val _isLocked = MutableStateFlow(false)
     val isLocked: StateFlow<Boolean> = _isLocked
 
+    private var lastBackgroundedAtMs: Long? = null
+    private var suppressArmedAtMs: Long? = null
+    private var suppressedThisPause: Boolean = false
+
     fun lockIfEnabled(pinEnabled: Boolean) {
         if (pinEnabled) _isLocked.value = true
     }
 
+    fun suppressNextBackgroundLock(nowMs: Long = System.currentTimeMillis()) {
+        suppressArmedAtMs = nowMs
+    }
+
+    fun onAppBackgrounded(pinEnabled: Boolean, nowMs: Long = System.currentTimeMillis()) {
+        val armed = suppressArmedAtMs
+        suppressArmedAtMs = null
+        if (!pinEnabled) {
+            suppressedThisPause = false
+            lastBackgroundedAtMs = null
+            return
+        }
+        if (armed != null && (nowMs - armed) in 0L..5_000L) {
+            suppressedThisPause = true
+            lastBackgroundedAtMs = null
+        } else {
+            suppressedThisPause = false
+            lastBackgroundedAtMs = nowMs
+        }
+    }
+
+    fun onAppForegrounded(
+        pinEnabled: Boolean,
+        timeoutSeconds: Int,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        val wasSuppressed = suppressedThisPause
+        val bgAt = lastBackgroundedAtMs
+        suppressedThisPause = false
+        lastBackgroundedAtMs = null
+
+        if (!pinEnabled) {
+            _isLocked.value = false
+            return
+        }
+        if (wasSuppressed || bgAt == null) return
+
+        val elapsedMs = (nowMs - bgAt).coerceAtLeast(0L)
+        val thresholdMs = timeoutSeconds.coerceAtLeast(0) * 1000L
+        if (elapsedMs >= thresholdMs) {
+            _isLocked.value = true
+        }
+    }
+
     fun unlock() {
+        suppressedThisPause = false
+        suppressArmedAtMs = null
+        lastBackgroundedAtMs = null
         _isLocked.value = false
     }
 }
@@ -155,6 +213,10 @@ class SecurityViewModel @Inject constructor(
 
     fun setBiometricEnabled(enabled: Boolean) {
         viewModelScope.launch { userPreferencesRepository.setBiometricEnabled(enabled) }
+    }
+
+    fun setLockTimeoutSeconds(seconds: Int) {
+        viewModelScope.launch { userPreferencesRepository.setLockTimeoutSeconds(seconds) }
     }
 
     fun verifyPin(rawPin: String, storedHash: String?): Boolean {
@@ -195,6 +257,7 @@ class SecurityViewModel @Inject constructor(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PinLockSettingsScreen(
     onBack: () -> Unit,
@@ -209,6 +272,7 @@ fun PinLockSettingsScreen(
     var confirmPinInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var showBiometricOffer by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -228,6 +292,7 @@ fun PinLockSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
@@ -289,6 +354,9 @@ fun PinLockSettingsScreen(
                         pinInput = ""
                         confirmPinInput = ""
                         statusMessage = "PIN saved successfully"
+                        if (prefs?.biometricEnabled != true && BiometricHelper.isAvailable(context)) {
+                            showBiometricOffer = true
+                        }
                     }
                 },
                 shape = MaterialTheme.shapes.extraLarge,
@@ -307,6 +375,20 @@ fun PinLockSettingsScreen(
                         enabled = BiometricHelper.isAvailable(context),
                         onCheckedChange = viewModel::setBiometricEnabled,
                     )
+                }
+                Text("Lock Timing", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    listOf(
+                        0 to "Immediately",
+                        60 to "After 1 minute",
+                        300 to "After 5 minutes",
+                    ).forEach { (seconds, label) ->
+                        FilterChip(
+                            selected = prefs.lockTimeoutSeconds == seconds,
+                            onClick = { viewModel.setLockTimeoutSeconds(seconds) },
+                            label = { Text(label) },
+                        )
+                    }
                 }
                 OutlinedButton(
                     onClick = {
@@ -327,6 +409,29 @@ fun PinLockSettingsScreen(
             }
         }
     }
+
+    if (showBiometricOffer) {
+        AlertDialog(
+            onDismissRequest = { showBiometricOffer = false },
+            title = { Text("Enable Biometric Unlock?") },
+            text = {
+                Text("Use fingerprint or face unlock to open FinLedger quickly instead of entering your PIN every time.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setBiometricEnabled(true)
+                        showBiometricOffer = false
+                        statusMessage = "PIN and biometric unlock enabled"
+                    },
+                    shape = MaterialTheme.shapes.extraLarge,
+                ) { Text("Enable") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBiometricOffer = false }) { Text("Not now") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -340,6 +445,7 @@ fun PinUnlockOverlay(
     val context = LocalContext.current
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    var showForgotPinHelp by remember { mutableStateOf(false) }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
@@ -385,7 +491,27 @@ fun PinUnlockOverlay(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Unlock with Biometrics") }
             }
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            TextButton(onClick = { showForgotPinHelp = true }) {
+                Text("Forgot PIN?")
+            }
         }
+    }
+
+    if (showForgotPinHelp) {
+        AlertDialog(
+            onDismissRequest = { showForgotPinHelp = false },
+            title = { Text("Forgot your PIN?") },
+            text = {
+                Text(
+                    "FinLedger runs completely offline with no cloud account, so a forgotten PIN cannot be reset remotely. " +
+                        "If biometrics cannot unlock it, you can clear app data in Android Settings → Apps → FinLedger → Storage → Clear data, then restore your exported JSON backup."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showForgotPinHelp = false }) { Text("Got it") }
+            },
+        )
     }
 }
 
@@ -440,7 +566,7 @@ fun OnboardingFlow(
                     Text("Primary Currency", style = MaterialTheme.typography.titleSmall)
                     Spacer(modifier = Modifier.height(Spacing.xs))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                        listOf("INR", "USD", "EUR", "GBP", "AED").forEach { code ->
+                        MoneyFormatter.SUPPORTED_CURRENCIES.forEach { code ->
                             FilterChip(selected = currency == code, onClick = { currency = code }, label = { Text(code) })
                         }
                     }

@@ -63,6 +63,7 @@ import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.CategoryPickerGrid
 import com.finledger.ui.components.DatePickerField
 import com.finledger.ui.components.EmptyStateView
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -74,7 +75,6 @@ fun BudgetsScreen(
     viewModel: BudgetsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var deletingBudgetId by remember { mutableStateOf<Long?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.errorMessage) {
@@ -151,9 +151,6 @@ fun BudgetsScreen(
                             ) {
                                 Text(progress.budget.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Text("${progress.percentUsed}%", style = MaterialTheme.typography.bodyLarge, color = barColor)
-                                IconButton(onClick = { deletingBudgetId = progress.budget.id }) {
-                                    Icon(Icons.Outlined.Delete, contentDescription = "Delete budget")
-                                }
                             }
                             LinearProgressIndicator(
                                 progress = { ratio },
@@ -179,23 +176,6 @@ fun BudgetsScreen(
             }
         }
     }
-
-    deletingBudgetId?.let { bid ->
-        AlertDialog(
-            onDismissRequest = { deletingBudgetId = null },
-            title = { Text("Delete Budget?") },
-            text = { Text("This budget will be deleted. Your transactions remain untouched.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteBudget(bid)
-                    deletingBudgetId = null
-                }) { Text("Delete", color = FinLedgerTheme.colors.negative) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletingBudgetId = null }) { Text("Cancel") }
-            },
-        )
-    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -206,6 +186,7 @@ fun AddEditBudgetScreen(
     viewModel: BudgetsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val undoCoordinator = LocalUndoCoordinator.current
     val existing = remember(budgetId, state.budgets) {
         budgetId?.let { id -> state.budgets.firstOrNull { it.budget.id == id }?.budget }
     }
@@ -239,6 +220,21 @@ fun AddEditBudgetScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (existing != null) {
+                        IconButton(
+                            onClick = {
+                                viewModel.deleteBudget(existing.id)
+                                undoCoordinator?.showDeleted(existing.name) {
+                                    viewModel.restoreBudgetDirect(existing.id)
+                                }
+                                onBack()
+                            },
+                        ) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete budget")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -340,7 +336,6 @@ fun SavingsGoalsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var contributeGoalId by remember { mutableStateOf<Long?>(null) }
-    var deletingGoalId by remember { mutableStateOf<Long?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.errorMessage) {
@@ -412,9 +407,6 @@ fun SavingsGoalsScreen(
                             ) {
                                 Text(goal.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-                                IconButton(onClick = { deletingGoalId = goal.id }) {
-                                    Icon(Icons.Outlined.Delete, contentDescription = "Delete goal")
-                                }
                             }
                             LinearProgressIndicator(
                                 progress = { progress },
@@ -479,23 +471,6 @@ fun SavingsGoalsScreen(
             },
         )
     }
-
-    deletingGoalId?.let { gid ->
-        AlertDialog(
-            onDismissRequest = { deletingGoalId = null },
-            title = { Text("Delete Savings Goal?") },
-            text = { Text("This savings goal will be removed.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteGoal(gid)
-                    deletingGoalId = null
-                }) { Text("Delete", color = FinLedgerTheme.colors.negative) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletingGoalId = null }) { Text("Cancel") }
-            },
-        )
-    }
 }
 
 @Composable
@@ -505,6 +480,7 @@ fun AddEditGoalScreen(
     viewModel: BudgetsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val undoCoordinator = LocalUndoCoordinator.current
     val existing = remember(goalId, state.goals) {
         goalId?.let { id -> state.goals.firstOrNull { it.id == id } }
     }
@@ -540,6 +516,21 @@ fun AddEditGoalScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (existing != null) {
+                        IconButton(
+                            onClick = {
+                                viewModel.deleteGoal(existing.id)
+                                undoCoordinator?.showDeleted(existing.name) {
+                                    viewModel.restoreGoalDirect(existing.id)
+                                }
+                                onBack()
+                            },
+                        ) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete goal")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -584,6 +575,7 @@ fun AddEditGoalScreen(
                     dateMs = targetDateMs,
                     onDateSelected = { targetDateMs = it },
                     label = "Target Date",
+                    showQuickChips = false,
                 )
             }
             OutlinedTextField(

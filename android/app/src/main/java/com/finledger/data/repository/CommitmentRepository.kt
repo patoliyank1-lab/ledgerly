@@ -41,6 +41,7 @@ class CommitmentRepository @Inject constructor(
 
     suspend fun updateLoanStatus(loanId: Long, status: LoanStatus) = loanDao.updateStatus(loanId, status)
     suspend fun deleteLoan(id: Long) = loanDao.softDelete(id)
+    suspend fun restoreLoan(id: Long) = loanDao.restore(id)
 
     // Bills
     fun observeActiveBills(): Flow<List<BillEntity>> = billDao.observeActive()
@@ -68,6 +69,7 @@ class CommitmentRepository @Inject constructor(
 
     suspend fun insertBillPayment(payment: BillPaymentEntity): Long = billDao.insertPayment(payment)
     suspend fun deleteBill(id: Long) = billDao.softDelete(id)
+    suspend fun restoreBill(id: Long) = billDao.restore(id)
 
     // Budgets
     fun observeActiveBudgets(): Flow<List<BudgetEntity>> = budgetDao.observeActive()
@@ -90,6 +92,7 @@ class CommitmentRepository @Inject constructor(
         return id
     }
     suspend fun deleteBudget(id: Long) = budgetDao.softDelete(id)
+    suspend fun restoreBudget(id: Long) = budgetDao.restore(id)
 
     // Savings goals
     fun observeSavingsGoals(): Flow<List<SavingsGoalEntity>> = savingsGoalDao.observeAll()
@@ -113,5 +116,6 @@ class CommitmentRepository @Inject constructor(
         return id
     }
     suspend fun deleteSavingsGoal(id: Long) = savingsGoalDao.softDelete(id)
+    suspend fun restoreSavingsGoal(id: Long) = savingsGoalDao.restore(id)
 }
 

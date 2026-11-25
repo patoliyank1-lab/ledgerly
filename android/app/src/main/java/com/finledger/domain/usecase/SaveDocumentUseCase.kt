@@ -51,6 +51,7 @@ class SaveDocumentUseCase @Inject constructor(
     }
 
     suspend fun softDelete(id: Long) = documentDao.softDelete(id)
+    suspend fun restore(id: Long) = documentDao.restore(id)
 
     private fun queryDisplayName(uri: Uri): String? {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->

@@ -41,6 +41,7 @@ class SocialRepository @Inject constructor(
 
     suspend fun archivePerson(id: Long, archived: Boolean) = personDao.setArchived(id, archived)
     suspend fun deletePerson(id: Long) = personDao.softDelete(id)
+    suspend fun restorePerson(id: Long) = personDao.restore(id)
 
     // Groups
     fun observeActiveGroups(): Flow<List<GroupEntity>> = groupDao.observeActive()
@@ -72,6 +73,7 @@ class SocialRepository @Inject constructor(
     }
 
     suspend fun updateGroupStatus(id: Long, status: GroupStatus) = groupDao.updateStatus(id, status)
+    suspend fun restoreGroup(id: Long) = groupDao.restore(id)
 
     // Events
     fun observeAllEvents(): Flow<List<EventEntity>> = eventDao.observeAll()
@@ -102,6 +104,7 @@ class SocialRepository @Inject constructor(
     }
 
     suspend fun updateEventStatus(id: Long, status: EventStatus) = eventDao.updateStatus(id, status)
+    suspend fun restoreEvent(id: Long) = eventDao.restore(id)
 
     // Shared expenses & settlements
     fun observeAllSharedExpenses(): Flow<List<SharedExpenseEntity>> = sharedExpenseDao.observeAll()
@@ -141,6 +144,14 @@ class SocialRepository @Inject constructor(
         )
     }
 
+    suspend fun restoreSharedExpense(id: Long) {
+        sharedExpenseDao.restore(id)
+        transactionDao.restoreBySharedExpenseId(id)
+        auditLogDao.insert(
+            AuditLogEntity(entityType = "shared_expense", entityId = id, action = "RESTORE")
+        )
+    }
+
     fun observeAllSettlements(): Flow<List<SettlementEntity>> = settlementDao.observeAll()
     fun observeSettlementsByPerson(personId: Long): Flow<List<SettlementEntity>> = settlementDao.observeByPerson(personId)
 
@@ -164,6 +175,16 @@ class SocialRepository @Inject constructor(
         }
         auditLogDao.insert(
             AuditLogEntity(entityType = "settlement", entityId = settlement.id, action = "DELETE")
+        )
+    }
+
+    suspend fun restoreSettlement(settlement: SettlementEntity) {
+        settlementDao.restore(settlement.id)
+        settlement.linkedTransactionId?.let { txId ->
+            transactionDao.setDeleted(txId, false)
+        }
+        auditLogDao.insert(
+            AuditLogEntity(entityType = "settlement", entityId = settlement.id, action = "RESTORE")
         )
     }
 }

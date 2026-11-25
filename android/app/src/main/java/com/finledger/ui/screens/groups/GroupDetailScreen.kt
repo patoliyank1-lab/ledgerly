@@ -49,6 +49,7 @@ import com.finledger.data.local.entity.SharedExpenseEntity
 import com.finledger.domain.usecase.SplitCalculator
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -66,6 +67,7 @@ fun GroupDetailScreen(
     val detail by viewModel.observeGroupDetail(groupId).collectAsStateWithLifecycle()
     var tabIndex by remember { mutableIntStateOf(0) }
     var inspectingExpense by remember { mutableStateOf<SharedExpenseEntity?>(null) }
+    val undoCoordinator = LocalUndoCoordinator.current
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -265,6 +267,9 @@ fun GroupDetailScreen(
                 TextButton(
                     onClick = {
                         viewModel.deleteSharedExpense(exp.id)
+                        undoCoordinator?.showDeleted(exp.description.ifBlank { "shared expense" }) {
+                            viewModel.restoreSharedExpenseDirect(exp.id)
+                        }
                         inspectingExpense = null
                     },
                 ) { Text("Delete", color = FinLedgerTheme.colors.negative) }

@@ -5,9 +5,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.GroupAdd
-import androidx.compose.material.icons.outlined.Handshake
-import androidx.compose.material.icons.outlined.Money
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -26,9 +23,6 @@ fun QuickActionFab(
     onAddExpense: () -> Unit,
     onAddIncome: () -> Unit,
     onAddTransfer: () -> Unit,
-    onAddSharedExpense: () -> Unit,
-    onAddLoan: () -> Unit,
-    onRecordSettlement: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -59,21 +53,6 @@ fun QuickActionFab(
                 leadingIcon = { Icon(Icons.Outlined.SwapHoriz, contentDescription = null) },
                 text = { Text("Transfer") },
                 onClick = { expanded = false; onAddTransfer() },
-            )
-            DropdownMenuItem(
-                leadingIcon = { Icon(Icons.Outlined.GroupAdd, contentDescription = null) },
-                text = { Text("Shared Expense") },
-                onClick = { expanded = false; onAddSharedExpense() },
-            )
-            DropdownMenuItem(
-                leadingIcon = { Icon(Icons.Outlined.Money, contentDescription = null) },
-                text = { Text("Lending / Borrowing") },
-                onClick = { expanded = false; onAddLoan() },
-            )
-            DropdownMenuItem(
-                leadingIcon = { Icon(Icons.Outlined.Handshake, contentDescription = null) },
-                text = { Text("Settle Up") },
-                onClick = { expanded = false; onRecordSettlement() },
             )
         }
     }

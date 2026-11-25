@@ -50,6 +50,7 @@ import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.DatePickerField
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -64,7 +65,7 @@ fun LoanDetailScreen(
     val repayments by viewModel.observeRepayments(loanId).collectAsStateWithLifecycle()
     val item = state.loans.firstOrNull { it.loan.id == loanId }
     var showCloseConfirm by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val undoCoordinator = LocalUndoCoordinator.current
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -83,7 +84,17 @@ fun LoanDetailScreen(
                                 Icon(Icons.Outlined.CheckCircle, contentDescription = "Close loan")
                             }
                         }
-                        IconButton(onClick = { showDeleteConfirm = true }) {
+                        IconButton(
+                            onClick = {
+                                val label = item.loan.personOrOrg.ifBlank { "loan" }
+                                viewModel.deleteLoan(loanId) {
+                                    undoCoordinator?.showDeleted(label) {
+                                        viewModel.restoreLoanDirect(loanId)
+                                    }
+                                    onBack()
+                                }
+                            },
+                        ) {
                             Icon(Icons.Outlined.Delete, contentDescription = "Delete loan")
                         }
                     }
@@ -196,23 +207,6 @@ fun LoanDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCloseConfirm = false }) { Text("Cancel") }
-            },
-        )
-    }
-
-    if (showDeleteConfirm && item != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete Loan?") },
-            text = { Text("This loan record will be deleted.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteConfirm = false
-                    viewModel.deleteLoan(loanId, onDone = onBack)
-                }) { Text("Delete", color = FinLedgerTheme.colors.negative) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
             },
         )
     }

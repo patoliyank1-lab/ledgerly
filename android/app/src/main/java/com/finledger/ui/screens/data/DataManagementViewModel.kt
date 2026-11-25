@@ -298,6 +298,10 @@ class DataManagementViewModel @Inject constructor(
         viewModelScope.launch { saveDocumentUseCase.softDelete(id) }
     }
 
+    suspend fun restoreDocumentDirect(id: Long) {
+        saveDocumentUseCase.restore(id)
+    }
+
     private val documentFlows = ConcurrentHashMap<Long, StateFlow<DocumentEntity?>>()
 
     fun observeDocument(id: Long): StateFlow<DocumentEntity?> = documentFlows.getOrPut(id) {

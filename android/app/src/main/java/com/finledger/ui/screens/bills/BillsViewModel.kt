@@ -130,6 +130,10 @@ class BillsViewModel @Inject constructor(
         viewModelScope.launch { commitmentRepository.deleteBill(id) }
     }
 
+    suspend fun restoreBillDirect(id: Long) {
+        commitmentRepository.restoreBill(id)
+    }
+
     fun clearError() {
         _error.value = null
     }
