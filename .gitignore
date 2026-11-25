@@ -12,3 +12,7 @@ finledger.keystore
 .DS_Store
 Thumbs.db
 .kotlin/
+
+# Local workspace SSH keys (never commit)
+.ssh/
+
