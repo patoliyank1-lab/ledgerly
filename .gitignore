@@ -1,0 +1,14 @@
+# Gradle / Android build outputs
+.gradle/
+**/build/
+local.properties
+*.keystore
+*.jks
+finledger.keystore
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+.kotlin/

@@ -1,0 +1,68 @@
+# ============================================================
+# Standard Android / Gradle .gitignore
+# ============================================================
+
+# Gradle build outputs
+.gradle/
+build/
+app/build/
+**/build/
+
+# Local configuration (never commit)
+local.properties
+*.keystore
+*.jks
+finledger.keystore
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+Thumbs.db
+
+# Android-generated files
+gen/
+out/
+
+# Signing configs (secrets go in GitHub Secrets, not here)
+keystore.properties
+signing.properties
+
+# Google services (if added later)
+google-services.json
+
+# Kotlin build cache
+.kotlin/
+
+# Room schema exports (optional — commit if you want migration tracking)
+# app/schemas/
+
+# Gradle wrapper jar — commit this so CI can bootstrap without downloading
+# !gradle/wrapper/gradle-wrapper.jar
+
+# Test results
+**/test-results/
+**/test-report/
+
+# Coverage
+**/coverage/
+**/jacoco/
+
+# Profiling
+*.hprof
+
+# Node (if any web tooling added later)
+node_modules/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+

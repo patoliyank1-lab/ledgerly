@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App name shown on the launcher -->
+    <string name="app_name">FinLedger</string>
+
+    <!-- Accessibility labels (will grow as screens are added) -->
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_add">Add new</string>
+    <string name="cd_menu">Open menu</string>
+
+    <!-- Generic UI labels -->
+    <string name="label_cancel">Cancel</string>
+    <string name="label_save">Save</string>
+    <string name="label_delete">Delete</string>
+    <string name="label_edit">Edit</string>
+    <string name="label_done">Done</string>
+    <string name="label_confirm">Confirm</string>
+    <string name="label_loading">Loading…</string>
+    <string name="label_error">Something went wrong</string>
+    <string name="label_retry">Retry</string>
+    <string name="label_empty">Nothing here yet</string>
+</resources>
+

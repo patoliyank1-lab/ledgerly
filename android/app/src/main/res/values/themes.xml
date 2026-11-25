@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Placeholder theme — real colors and typography from DESIGN.md
+  will be applied in task S-04 (Design Token files).
+  Compose screens handle all visual styling; this XML theme is only
+  needed for the window/status bar configuration.
+-->
+<resources>
+
+    <!-- Base application theme -->
+    <style name="Theme.FinLedger" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Compose handles all UI; we only set window-level properties here -->
+        <!-- Real colorPrimary, colorSurface etc. set in S-04 via Color.kt -->
+    </style>
+
+    <!-- Splash screen theme (shows before Compose loads) -->
+    <style name="Theme.FinLedger.Splash" parent="Theme.FinLedger">
+        <!-- Splash background matches app background color (#F5F5F7 parchment) -->
+        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+</resources>
+

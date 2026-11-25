@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security config.
+  The app is fully offline — no backend API calls.
+  Google Fonts are fetched at first run to cache the Inter font.
+  After caching, the app works with no network.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <!-- Allow Google Fonts CDN for Inter font download -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">fonts.googleapis.com</domain>
+        <domain includeSubdomains="true">fonts.gstatic.com</domain>
+    </domain-config>
+</network-security-config>
+

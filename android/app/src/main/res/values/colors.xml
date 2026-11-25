@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash screen background color (#F5F5F7 = Parchment from DESIGN.md) -->
+    <color name="splash_background">#F5F5F7</color>
+</resources>
+
