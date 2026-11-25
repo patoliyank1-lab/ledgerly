@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Singleton
 
 data class DataManagementUiState(
     val accounts: List<AccountWithBalance> = emptyList(),
@@ -42,6 +43,15 @@ data class DataManagementUiState(
     val restorePreview: RestorePreview? = null,
 )
 
+@Singleton
+class ImportSessionHolder @Inject constructor() {
+    val csvState = MutableStateFlow<Pair<String, CsvTable?>>("" to null)
+    val mapping = MutableStateFlow(ColumnMapping())
+    val analyzed = MutableStateFlow<List<AnalyzedImportRow>>(emptyList())
+    val importResult = MutableStateFlow<ImportExecutionResult?>(null)
+    val restorePreview = MutableStateFlow<RestorePreview?>(null)
+}
+
 @HiltViewModel
 class DataManagementViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -56,17 +66,18 @@ class DataManagementViewModel @Inject constructor(
     private val restoreUseCase: RestoreUseCase,
     private val executeImportUseCase: ExecuteImportUseCase,
     private val saveDocumentUseCase: SaveDocumentUseCase,
+    private val session: ImportSessionHolder,
     importHistoryDao: ImportHistoryDao,
     backupHistoryDao: BackupHistoryDao,
     userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _status = MutableStateFlow<String?>(null)
-    private val _csvState = MutableStateFlow<Pair<String, CsvTable?>>("" to null)
-    private val _mapping = MutableStateFlow(ColumnMapping())
-    private val _analyzed = MutableStateFlow<List<AnalyzedImportRow>>(emptyList())
-    private val _importResult = MutableStateFlow<ImportExecutionResult?>(null)
-    private val _restorePreview = MutableStateFlow<RestorePreview?>(null)
+    private val _csvState = session.csvState
+    private val _mapping = session.mapping
+    private val _analyzed = session.analyzed
+    private val _importResult = session.importResult
+    private val _restorePreview = session.restorePreview
 
     val uiState: StateFlow<DataManagementUiState> = combine<Any?, DataManagementUiState>(
         getAccountsUseCase(),
