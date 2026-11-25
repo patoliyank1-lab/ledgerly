@@ -24,6 +24,9 @@ interface InvestmentDao {
     @Query("SELECT * FROM investments WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<InvestmentEntity>
 
+    @Query("SELECT * FROM investments")
+    suspend fun getAllRawOnce(): List<InvestmentEntity>
+
     @Query("SELECT * FROM investment_transactions WHERE isDeleted = 0 ORDER BY date DESC")
     fun observeAllTransactions(): Flow<List<InvestmentTransactionEntity>>
 
@@ -32,6 +35,9 @@ interface InvestmentDao {
 
     @Query("SELECT * FROM investment_transactions WHERE isDeleted = 0")
     suspend fun getAllTransactionsOnce(): List<InvestmentTransactionEntity>
+
+    @Query("SELECT * FROM investment_transactions")
+    suspend fun getAllTransactionsRawOnce(): List<InvestmentTransactionEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertInvestment(investment: InvestmentEntity): Long
@@ -57,7 +63,13 @@ interface NetWorthDao {
     @Query("SELECT * FROM net_worth_snapshots ORDER BY snapshotDateMs ASC")
     fun observeSnapshots(): Flow<List<NetWorthSnapshotEntity>>
 
+    @Query("SELECT * FROM net_worth_snapshots")
+    suspend fun getAllOnce(): List<NetWorthSnapshotEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSnapshot(snapshot: NetWorthSnapshotEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(snapshots: List<NetWorthSnapshotEntity>)
 }
 

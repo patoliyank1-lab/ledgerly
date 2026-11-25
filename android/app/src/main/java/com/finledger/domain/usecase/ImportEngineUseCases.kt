@@ -7,7 +7,10 @@ import com.finledger.data.local.entity.ImportStatus
 import com.finledger.data.local.entity.TransactionEntity
 import com.finledger.data.local.entity.TransactionType
 import com.finledger.domain.util.MoneyFormatter
-import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 import java.util.Locale
 import javax.inject.Inject
 
@@ -23,6 +26,7 @@ data class ColumnMapping(
     val merchantIndex: Int? = null,
     val descriptionIndex: Int? = null,
     val notesIndex: Int? = null,
+    val positiveIsIncome: Boolean = false,
 )
 
 enum class ImportRowStatus { VALID, INVALID, DUPLICATE }
@@ -86,18 +90,21 @@ object CsvParser {
 
 object ImportValidator {
     private val dateFormats = listOf(
-        SimpleDateFormat("yyyy-MM-dd", Locale.US),
-        SimpleDateFormat("dd/MM/yyyy", Locale.US),
-        SimpleDateFormat("dd-MM-yyyy", Locale.US),
-        SimpleDateFormat("dd MMM yyyy", Locale.US),
-        SimpleDateFormat("MM/dd/yyyy", Locale.US),
-    ).onEach { it.isLenient = false }
+        DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US).withResolverStyle(ResolverStyle.STRICT),
+        DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT),
+        DateTimeFormatter.ofPattern("dd-MM-uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT),
+        DateTimeFormatter.ofPattern("dd MMM uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT),
+        DateTimeFormatter.ofPattern("MM/dd/uuuu", Locale.US).withResolverStyle(ResolverStyle.STRICT),
+    )
 
     fun parseDate(raw: String): Long? {
         val trimmed = raw.trim()
         for (fmt in dateFormats) {
             try {
-                return fmt.parse(trimmed)?.time
+                return LocalDate.parse(trimmed, fmt)
+                    .atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
             } catch (_: Exception) {
             }
         }
@@ -123,12 +130,19 @@ object ImportValidator {
             return AnalyzedImportRow(rowNumber, cols, ImportRowStatus.INVALID, "Amount cannot be zero")
         }
 
-        val rawType = mapping.typeIndex?.let { cols.getOrNull(it) }.orEmpty()
+        val rawType = mapping.typeIndex?.let { cols.getOrNull(it) }.orEmpty().trim()
         val txType = when {
-            rawType.equals("INCOME", ignoreCase = true) || rawType.equals("CREDIT", ignoreCase = true) -> TransactionType.INCOME
-            rawType.equals("EXPENSE", ignoreCase = true) || rawType.equals("DEBIT", ignoreCase = true) -> TransactionType.EXPENSE
+            rawType.equals("INCOME", ignoreCase = true) ||
+                rawType.equals("CREDIT", ignoreCase = true) ||
+                rawType.equals("CR", ignoreCase = true) ||
+                rawType.equals("DEPOSIT", ignoreCase = true) -> TransactionType.INCOME
+            rawType.equals("EXPENSE", ignoreCase = true) ||
+                rawType.equals("DEBIT", ignoreCase = true) ||
+                rawType.equals("DR", ignoreCase = true) ||
+                rawType.equals("WITHDRAWAL", ignoreCase = true) -> TransactionType.EXPENSE
             rawType.equals("REFUND", ignoreCase = true) -> TransactionType.REFUND
             rawSignedPaise < 0 -> TransactionType.EXPENSE
+            mapping.positiveIsIncome -> TransactionType.INCOME
             else -> TransactionType.EXPENSE
         }
 

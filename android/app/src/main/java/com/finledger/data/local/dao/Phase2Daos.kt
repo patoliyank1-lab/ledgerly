@@ -25,6 +25,9 @@ interface PersonDao {
     @Query("SELECT * FROM persons WHERE isDeleted = 0 ORDER BY name ASC")
     suspend fun getAllOnce(): List<PersonEntity>
 
+    @Query("SELECT * FROM persons")
+    suspend fun getAllRawOnce(): List<PersonEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(person: PersonEntity): Long
 
@@ -58,6 +61,12 @@ interface GroupDao {
     @Query("SELECT * FROM groups WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<GroupEntity>
 
+    @Query("SELECT * FROM groups")
+    suspend fun getAllRawOnce(): List<GroupEntity>
+
+    @Query("SELECT * FROM group_members")
+    suspend fun getAllMembersOnce(): List<GroupMemberEntity>
+
     @Query("SELECT * FROM group_members WHERE groupId = :groupId AND isActive = 1")
     fun observeMembers(groupId: Long): Flow<List<GroupMemberEntity>>
 
@@ -75,6 +84,9 @@ interface GroupDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMember(member: GroupMemberEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMembers(members: List<GroupMemberEntity>)
 
     @Query("DELETE FROM group_members WHERE groupId = :groupId")
     suspend fun clearMembers(groupId: Long)
@@ -103,6 +115,12 @@ interface EventDao {
     @Query("SELECT * FROM events WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<EventEntity>
 
+    @Query("SELECT * FROM events")
+    suspend fun getAllRawOnce(): List<EventEntity>
+
+    @Query("SELECT * FROM event_participants")
+    suspend fun getAllParticipantsOnce(): List<EventParticipantEntity>
+
     @Query("SELECT * FROM event_participants WHERE eventId = :eventId AND isActive = 1")
     fun observeParticipants(eventId: Long): Flow<List<EventParticipantEntity>>
 
@@ -120,6 +138,9 @@ interface EventDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertParticipant(participant: EventParticipantEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertParticipants(participants: List<EventParticipantEntity>)
 
     @Query("DELETE FROM event_participants WHERE eventId = :eventId")
     suspend fun clearParticipants(eventId: Long)
@@ -157,8 +178,23 @@ interface SharedExpenseDao {
     @Query("SELECT * FROM shared_expenses WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<SharedExpenseEntity>
 
+    @Query("SELECT * FROM shared_expenses")
+    suspend fun getAllRawOnce(): List<SharedExpenseEntity>
+
+    @Query("SELECT * FROM expense_payers")
+    suspend fun getAllPayersOnce(): List<ExpensePayerEntity>
+
+    @Query("SELECT * FROM expense_splits")
+    suspend fun getAllSplitsOnce(): List<ExpenseSplitEntity>
+
+    @Query("SELECT * FROM shared_expense_items")
+    suspend fun getAllItemsOnce(): List<SharedExpenseItemEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExpense(expense: SharedExpenseEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExpenses(expenses: List<SharedExpenseEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPayers(payers: List<ExpensePayerEntity>)
@@ -184,6 +220,9 @@ interface SettlementDao {
     @Query("SELECT * FROM settlements WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<SettlementEntity>
 
+    @Query("SELECT * FROM settlements")
+    suspend fun getAllRawOnce(): List<SettlementEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(settlement: SettlementEntity): Long
 
@@ -195,5 +234,8 @@ interface SettlementDao {
 
     @Query("UPDATE settlements SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
+
+    @Query("UPDATE settlements SET isDeleted = 1 WHERE linkedTransactionId = :txId")
+    suspend fun softDeleteByLinkedTransactionId(txId: Long)
 }
 

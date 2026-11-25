@@ -60,6 +60,7 @@ class BudgetsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BudgetsUiState())
 
     fun saveBudget(
+        existing: BudgetEntity? = null,
         name: String,
         limitPaise: Long,
         period: BudgetPeriod,
@@ -69,24 +70,32 @@ class BudgetsViewModel @Inject constructor(
         onSuccess: () -> Unit,
     ) {
         viewModelScope.launch {
-            createBudgetUseCase(
-                BudgetEntity(
-                    name = name,
-                    amount = limitPaise,
-                    period = period,
-                    startDate = System.currentTimeMillis(),
-                    categoryId = categoryId,
-                    alertThreshold = alertThreshold,
-                    isRollover = isRollover,
-                )
-            ).onSuccess {
+            val entity = (existing ?: BudgetEntity(
+                name = name,
+                amount = limitPaise,
+                period = period,
+                startDate = System.currentTimeMillis(),
+            )).copy(
+                name = name,
+                amount = limitPaise,
+                period = period,
+                categoryId = categoryId,
+                alertThreshold = alertThreshold.coerceIn(1, 100),
+                isRollover = isRollover,
+            )
+            createBudgetUseCase(entity).onSuccess {
                 _error.value = null
                 onSuccess()
             }.onFailure { _error.value = it.message }
         }
     }
 
+    fun deleteBudget(id: Long) {
+        viewModelScope.launch { commitmentRepository.deleteBudget(id) }
+    }
+
     fun saveGoal(
+        existing: SavingsGoalEntity? = null,
         name: String,
         description: String,
         targetPaise: Long,
@@ -95,23 +104,37 @@ class BudgetsViewModel @Inject constructor(
         onSuccess: () -> Unit,
     ) {
         viewModelScope.launch {
-            createSavingsGoalUseCase(
-                SavingsGoalEntity(
-                    name = name,
-                    description = description.trim(),
-                    targetAmount = targetPaise,
-                    currentAmount = currentPaise,
-                    targetDate = targetDateMs,
-                )
-            ).onSuccess {
+            val entity = (existing ?: SavingsGoalEntity(
+                name = name,
+                targetAmount = targetPaise,
+            )).copy(
+                name = name,
+                description = description.trim(),
+                targetAmount = targetPaise,
+                currentAmount = currentPaise,
+                targetDate = targetDateMs,
+            )
+            createSavingsGoalUseCase(entity).onSuccess {
                 _error.value = null
                 onSuccess()
             }.onFailure { _error.value = it.message }
         }
     }
 
+    fun deleteGoal(id: Long) {
+        viewModelScope.launch { commitmentRepository.deleteSavingsGoal(id) }
+    }
+
     fun contributeToGoal(goalId: Long, deltaPaise: Long) {
-        viewModelScope.launch { createSavingsGoalUseCase.contribute(goalId, deltaPaise) }
+        viewModelScope.launch {
+            createSavingsGoalUseCase.contribute(goalId, deltaPaise)
+                .onSuccess { _error.value = null }
+                .onFailure { _error.value = it.message }
+        }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }
 

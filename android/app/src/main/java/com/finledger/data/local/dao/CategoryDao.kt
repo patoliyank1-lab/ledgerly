@@ -26,6 +26,9 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE isDeleted = 0 ORDER BY sortOrder ASC")
     suspend fun getAllOnce(): List<CategoryEntity>
 
+    @Query("SELECT * FROM categories")
+    suspend fun getAllRawOnce(): List<CategoryEntity>
+
     @Query("SELECT COUNT(*) FROM categories WHERE isDeleted = 0")
     suspend fun count(): Int
 
@@ -50,6 +53,12 @@ interface TagDao {
     @Query("SELECT * FROM tags WHERE isDeleted = 0 ORDER BY name ASC")
     suspend fun getAllOnce(): List<TagEntity>
 
+    @Query("SELECT * FROM tags")
+    suspend fun getAllRawOnce(): List<TagEntity>
+
+    @Query("SELECT * FROM transaction_tags")
+    suspend fun getAllCrossRefsOnce(): List<TransactionTagCrossRef>
+
     @Query(
         """
         SELECT t.* FROM tags t
@@ -71,6 +80,9 @@ interface TagDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCrossRef(crossRef: TransactionTagCrossRef)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCrossRefs(crossRefs: List<TransactionTagCrossRef>)
+
     @Query("DELETE FROM transaction_tags WHERE transactionId = :transactionId")
     suspend fun clearTagsForTransaction(transactionId: Long)
 
@@ -86,7 +98,13 @@ interface AuditLogDao {
     @Query("SELECT * FROM audit_log WHERE entityType = :entityType AND entityId = :entityId ORDER BY performedAt DESC")
     fun observeForEntity(entityType: String, entityId: Long): Flow<List<AuditLogEntity>>
 
+    @Query("SELECT * FROM audit_log")
+    suspend fun getAllOnce(): List<AuditLogEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: AuditLogEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entries: List<AuditLogEntity>)
 }
 

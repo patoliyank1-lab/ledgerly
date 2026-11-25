@@ -3,10 +3,16 @@ package com.finledger
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +20,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -30,8 +39,7 @@ import com.finledger.ui.screens.security.PinUnlockOverlay
 import com.finledger.ui.screens.settings.shouldUseDarkTheme
 import com.finledger.ui.theme.FinLedgerTheme
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -47,25 +55,63 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val initialPrefs = runBlocking { userPreferencesRepository.preferences.first() }
-        appLockManager.lockIfEnabled(initialPrefs.pinEnabled)
-
         setContent {
-            val prefs by userPreferencesRepository.preferences
-                .collectAsStateWithLifecycle(initialValue = initialPrefs)
+            val prefsState by remember {
+                userPreferencesRepository.preferences.map<UserPreferences, UserPreferences?> { it }
+            }.collectAsStateWithLifecycle(initialValue = null)
             val pinHash by userPreferencesRepository.pinHash
                 .collectAsStateWithLifecycle(initialValue = null)
             val isLocked by appLockManager.isLocked.collectAsStateWithLifecycle()
             var biometricPrompted by remember { mutableStateOf(false) }
+            var initialLockChecked by remember { mutableStateOf(false) }
+            val lifecycleOwner = LocalLifecycleOwner.current
 
-            LaunchedEffect(isLocked, prefs.biometricEnabled) {
-                if (isLocked && prefs.biometricEnabled && !biometricPrompted && BiometricHelper.isAvailable(this@MainActivity)) {
-                    biometricPrompted = true
+            LaunchedEffect(prefsState) {
+                val p = prefsState
+                if (p != null && !initialLockChecked) {
+                    appLockManager.lockIfEnabled(p.pinEnabled)
+                    initialLockChecked = true
+                }
+            }
+
+            DisposableEffect(lifecycleOwner, prefsState?.pinEnabled) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_STOP && !isChangingConfigurations) {
+                        if (prefsState?.pinEnabled == true) {
+                            appLockManager.lockIfEnabled(true)
+                            biometricPrompted = false
+                        }
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
+
+            val prefs = prefsState
+            if (prefs == null) {
+                FinLedgerTheme {
+                    Surface(
+                        color = MaterialTheme.colorScheme.background,
+                        modifier = Modifier.fillMaxSize(),
+                    ) { Box(modifier = Modifier.fillMaxSize()) }
+                }
+                return@setContent
+            }
+
+            val triggerBiometric: () -> Unit = {
+                if (prefs.biometricEnabled && BiometricHelper.isAvailable(this@MainActivity)) {
                     BiometricHelper.authenticate(
                         activity = this@MainActivity,
                         onSuccess = { appLockManager.unlock() },
                         onError = { /* User falls back to PIN */ },
                     )
+                }
+            }
+
+            LaunchedEffect(isLocked, prefs.biometricEnabled) {
+                if (isLocked && prefs.biometricEnabled && !biometricPrompted && BiometricHelper.isAvailable(this@MainActivity)) {
+                    biometricPrompted = true
+                    triggerBiometric()
                 }
             }
 
@@ -75,6 +121,7 @@ class MainActivity : FragmentActivity() {
                         PinUnlockOverlay(
                             storedHash = pinHash,
                             biometricEnabled = prefs.biometricEnabled,
+                            onRequestBiometric = triggerBiometric,
                             onUnlocked = { appLockManager.unlock() },
                         )
                     }
@@ -99,6 +146,7 @@ fun FinLedgerAppShell() {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
                 FinLedgerBottomBar(
@@ -118,7 +166,9 @@ fun FinLedgerAppShell() {
     ) { innerPadding ->
         FinLedgerNavHost(
             navController = navController,
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding),
         )
     }
 }

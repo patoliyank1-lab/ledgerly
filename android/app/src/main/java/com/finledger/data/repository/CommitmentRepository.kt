@@ -48,8 +48,21 @@ class CommitmentRepository @Inject constructor(
     suspend fun getBillById(id: Long): BillEntity? = billDao.getById(id)
 
     suspend fun saveBill(bill: BillEntity): Long {
-        val id = billDao.insertBill(bill)
-        auditLogDao.insert(AuditLogEntity(entityType = "bill", entityId = id, action = "SAVE", newValue = bill.name))
+        val isNew = bill.id == 0L
+        val id = if (isNew) {
+            billDao.insertBill(bill)
+        } else {
+            billDao.updateBill(bill)
+            bill.id
+        }
+        auditLogDao.insert(
+            AuditLogEntity(
+                entityType = "bill",
+                entityId = id,
+                action = if (isNew) "CREATE" else "UPDATE",
+                newValue = bill.name,
+            )
+        )
         return id
     }
 
@@ -59,8 +72,21 @@ class CommitmentRepository @Inject constructor(
     // Budgets
     fun observeActiveBudgets(): Flow<List<BudgetEntity>> = budgetDao.observeActive()
     suspend fun saveBudget(budget: BudgetEntity): Long {
-        val id = budgetDao.insert(budget)
-        auditLogDao.insert(AuditLogEntity(entityType = "budget", entityId = id, action = "SAVE", newValue = budget.name))
+        val isNew = budget.id == 0L
+        val id = if (isNew) {
+            budgetDao.insert(budget)
+        } else {
+            budgetDao.update(budget)
+            budget.id
+        }
+        auditLogDao.insert(
+            AuditLogEntity(
+                entityType = "budget",
+                entityId = id,
+                action = if (isNew) "CREATE" else "UPDATE",
+                newValue = budget.name,
+            )
+        )
         return id
     }
     suspend fun deleteBudget(id: Long) = budgetDao.softDelete(id)
@@ -69,8 +95,21 @@ class CommitmentRepository @Inject constructor(
     fun observeSavingsGoals(): Flow<List<SavingsGoalEntity>> = savingsGoalDao.observeAll()
     suspend fun getSavingsGoalById(id: Long): SavingsGoalEntity? = savingsGoalDao.getById(id)
     suspend fun saveSavingsGoal(goal: SavingsGoalEntity): Long {
-        val id = savingsGoalDao.insert(goal)
-        auditLogDao.insert(AuditLogEntity(entityType = "savings_goal", entityId = id, action = "SAVE", newValue = goal.name))
+        val isNew = goal.id == 0L
+        val id = if (isNew) {
+            savingsGoalDao.insert(goal)
+        } else {
+            savingsGoalDao.update(goal)
+            goal.id
+        }
+        auditLogDao.insert(
+            AuditLogEntity(
+                entityType = "savings_goal",
+                entityId = id,
+                action = if (isNew) "CREATE" else "UPDATE",
+                newValue = goal.name,
+            )
+        )
         return id
     }
     suspend fun deleteSavingsGoal(id: Long) = savingsGoalDao.softDelete(id)

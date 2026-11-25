@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -34,6 +35,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -263,6 +266,14 @@ fun AddInvestmentScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
+                value = symbol,
+                onValueChange = { symbol = it },
+                label = { Text("Ticker / Symbol (Optional)") },
+                singleLine = true,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
                 value = unitsText,
                 onValueChange = { unitsText = it; errorText = null },
                 label = { Text("Quantity / Units") },
@@ -333,6 +344,7 @@ fun AddInvestmentScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InvestmentDetailScreen(
     investmentId: Long,
@@ -343,16 +355,33 @@ fun InvestmentDetailScreen(
     val trades by viewModel.observeTrades(investmentId).collectAsStateWithLifecycle()
     val item = state.portfolio.items.firstOrNull { it.investment.id == investmentId }
     var showValDialog by remember { mutableStateOf(false) }
-    var showSellDialog by remember { mutableStateOf(false) }
+    var activeTradeType by remember { mutableStateOf<InvestmentTransactionType?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(item?.investment?.name ?: "Investment", style = MaterialTheme.typography.headlineMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (item != null) {
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete investment")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -398,16 +427,33 @@ fun InvestmentDetailScreen(
                             color = FinLedgerTheme.colors.skyLinkBlue,
                         )
                         Spacer(modifier = Modifier.height(Spacing.md))
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        ) {
                             Button(onClick = { showValDialog = true }, shape = MaterialTheme.shapes.extraLarge) {
                                 Text("Update Price")
                             }
                             OutlinedButton(
-                                onClick = { showSellDialog = true },
+                                onClick = { activeTradeType = InvestmentTransactionType.BUY },
                                 shape = MaterialTheme.shapes.extraLarge,
                                 border = BorderStroke(1.dp, FinLedgerTheme.colors.skyLinkBlue),
                             ) {
-                                Text("Record Sell", color = FinLedgerTheme.colors.skyLinkBlue)
+                                Text("Buy / SIP", color = FinLedgerTheme.colors.skyLinkBlue)
+                            }
+                            OutlinedButton(
+                                onClick = { activeTradeType = InvestmentTransactionType.SELL },
+                                shape = MaterialTheme.shapes.extraLarge,
+                                border = BorderStroke(1.dp, FinLedgerTheme.colors.skyLinkBlue),
+                            ) {
+                                Text("Sell", color = FinLedgerTheme.colors.skyLinkBlue)
+                            }
+                            OutlinedButton(
+                                onClick = { activeTradeType = InvestmentTransactionType.DIVIDEND },
+                                shape = MaterialTheme.shapes.extraLarge,
+                                border = BorderStroke(1.dp, FinLedgerTheme.colors.skyLinkBlue),
+                            ) {
+                                Text("Dividend", color = FinLedgerTheme.colors.skyLinkBlue)
                             }
                         }
                     }
@@ -452,18 +498,32 @@ fun InvestmentDetailScreen(
 
     if (showValDialog && item != null) {
         var priceText by remember { mutableStateOf(MoneyFormatter.paiseToInputString(item.investment.currentPrice)) }
+        var dialogError by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { showValDialog = false },
             title = { Text("Update Current Price") },
             text = {
-                AmountTextField(value = priceText, onValueChange = { priceText = it }, label = "Current Price per Unit", currency = state.primaryCurrency)
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    AmountTextField(
+                        value = priceText,
+                        onValueChange = { priceText = it; dialogError = null },
+                        label = "Current Price per Unit",
+                        currency = state.primaryCurrency,
+                    )
+                    dialogError?.let {
+                        Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         val p = MoneyFormatter.parseToPaise(priceText) ?: 0L
-                        if (p > 0L) viewModel.updateValuation(investmentId, p)
-                        showValDialog = false
+                        if (p <= 0L) {
+                            dialogError = "Enter a valid positive price"
+                            return@Button
+                        }
+                        viewModel.updateValuation(investmentId, p) { showValDialog = false }
                     },
                     shape = MaterialTheme.shapes.extraLarge,
                 ) { Text("Update") }
@@ -472,38 +532,127 @@ fun InvestmentDetailScreen(
         )
     }
 
-    if (showSellDialog && item != null) {
-        var unitsText by remember { mutableStateOf(item.investment.currentUnits.toString()) }
-        var priceText by remember { mutableStateOf(MoneyFormatter.paiseToInputString(item.investment.currentPrice)) }
+    activeTradeType?.let { tradeType ->
+        if (item == null) return@let
+        var selectedTradeType by remember(tradeType) { mutableStateOf(tradeType) }
+        var unitsText by remember(tradeType) {
+            mutableStateOf(if (tradeType == InvestmentTransactionType.SELL) item.investment.currentUnits.toString() else "1")
+        }
+        var priceText by remember(tradeType) {
+            mutableStateOf(
+                if (tradeType == InvestmentTransactionType.DIVIDEND) ""
+                else MoneyFormatter.paiseToInputString(item.investment.currentPrice)
+            )
+        }
+        var feesText by remember(tradeType) { mutableStateOf("") }
+        var dialogError by remember(tradeType) { mutableStateOf<String?>(null) }
+
         AlertDialog(
-            onDismissRequest = { showSellDialog = false },
-            title = { Text("Sell Units") },
+            onDismissRequest = { activeTradeType = null },
+            title = {
+                Text(
+                    when (selectedTradeType) {
+                        InvestmentTransactionType.BUY -> "Buy More Units"
+                        InvestmentTransactionType.SIP -> "Record SIP Installment"
+                        InvestmentTransactionType.SELL -> "Sell Units"
+                        InvestmentTransactionType.DIVIDEND -> "Record Dividend / Interest"
+                    }
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    OutlinedTextField(
-                        value = unitsText,
-                        onValueChange = { unitsText = it },
-                        label = { Text("Units to Sell") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    if (tradeType == InvestmentTransactionType.BUY || tradeType == InvestmentTransactionType.SIP) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            FilterChip(
+                                selected = selectedTradeType == InvestmentTransactionType.BUY,
+                                onClick = { selectedTradeType = InvestmentTransactionType.BUY },
+                                label = { Text("BUY") },
+                            )
+                            FilterChip(
+                                selected = selectedTradeType == InvestmentTransactionType.SIP,
+                                onClick = { selectedTradeType = InvestmentTransactionType.SIP },
+                                label = { Text("SIP") },
+                            )
+                        }
+                    }
+                    if (selectedTradeType != InvestmentTransactionType.DIVIDEND) {
+                        OutlinedTextField(
+                            value = unitsText,
+                            onValueChange = { unitsText = it; dialogError = null },
+                            label = { Text("Units") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        )
+                    }
+                    AmountTextField(
+                        value = priceText,
+                        onValueChange = { priceText = it; dialogError = null },
+                        label = if (selectedTradeType == InvestmentTransactionType.DIVIDEND) "Dividend Amount" else "Price per Unit",
+                        currency = state.primaryCurrency,
                     )
-                    AmountTextField(value = priceText, onValueChange = { priceText = it }, label = "Sell Price per Unit", currency = state.primaryCurrency)
+                    if (selectedTradeType != InvestmentTransactionType.DIVIDEND) {
+                        AmountTextField(
+                            value = feesText,
+                            onValueChange = { feesText = it },
+                            label = "Fees & Taxes (Optional)",
+                            currency = state.primaryCurrency,
+                        )
+                    }
+                    dialogError?.let {
+                        Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        val u = unitsText.toDoubleOrNull() ?: 0.0
+                        val u = if (selectedTradeType == InvestmentTransactionType.DIVIDEND) 0.0 else (unitsText.toDoubleOrNull() ?: 0.0)
                         val p = MoneyFormatter.parseToPaise(priceText) ?: 0L
-                        val accId = item.investment.accountId ?: state.accounts.firstOrNull()?.account?.id
-                        if (u > 0.0 && p > 0L) {
-                            viewModel.recordTrade(investmentId, InvestmentTransactionType.SELL, u, p, accId, "Manual sell")
+                        val f = MoneyFormatter.parseToPaise(feesText) ?: 0L
+                        if (selectedTradeType != InvestmentTransactionType.DIVIDEND && u <= 0.0) {
+                            dialogError = "Enter positive units"
+                            return@Button
                         }
-                        showSellDialog = false
+                        if (selectedTradeType == InvestmentTransactionType.SELL && u > item.investment.currentUnits + 0.0001) {
+                            dialogError = "Cannot sell more than ${item.investment.currentUnits} units"
+                            return@Button
+                        }
+                        if (p <= 0L) {
+                            dialogError = "Enter a valid positive amount"
+                            return@Button
+                        }
+                        val accId = item.investment.accountId ?: state.accounts.firstOrNull()?.account?.id
+                        viewModel.recordTrade(
+                            investmentId = investmentId,
+                            tradeType = selectedTradeType,
+                            units = u,
+                            pricePerUnitPaise = p,
+                            feesPaise = f,
+                            accountId = accId,
+                            notes = "Manual ${selectedTradeType.name.lowercase()}",
+                            onSuccess = { activeTradeType = null },
+                        )
                     },
                     shape = MaterialTheme.shapes.extraLarge,
-                ) { Text("Sell") }
+                ) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { showSellDialog = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { activeTradeType = null }) { Text("Cancel") } },
+        )
+    }
+
+    if (showDeleteConfirm && item != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete ${item.investment.name}?") },
+            text = { Text("This investment will be removed from your active portfolio.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deleteInvestment(investmentId, onDone = onBack)
+                    },
+                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
         )
     }
 }

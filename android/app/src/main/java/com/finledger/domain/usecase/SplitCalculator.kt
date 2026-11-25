@@ -2,12 +2,17 @@ package com.finledger.domain.usecase
 
 import com.finledger.data.local.entity.ExpensePayerEntity
 import com.finledger.data.local.entity.ExpenseSplitEntity
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.absoluteValue
 import kotlin.math.roundToLong
+
+private val itemSplitIdCounter = AtomicLong(1L)
 
 data class ItemSplitInput(
     val itemName: String,
     val amountPaise: Long,
     val assignedPersonIds: List<Long>,
+    val id: Long = itemSplitIdCounter.getAndIncrement(),
 )
 
 /**
@@ -29,6 +34,16 @@ object SplitCalculator {
     }
 
     fun splitByAmounts(amounts: Map<Long, Long>): Map<Long, Long> = amounts.toMap()
+
+    fun validatePercentages(percentages: Map<Long, Double>): String? {
+        if (percentages.isEmpty()) return "Select at least one participant"
+        if (percentages.values.any { it < 0.0 }) return "Percentages cannot be negative"
+        val sum = percentages.values.sum()
+        if ((sum - 100.0).absoluteValue > 0.01) {
+            return "Percentages must sum to 100% (currently ${"%.1f".format(sum)}%)"
+        }
+        return null
+    }
 
     fun splitByPercentages(totalPaise: Long, percentages: Map<Long, Double>): Map<Long, Long> {
         if (percentages.isEmpty()) return emptyMap()

@@ -23,11 +23,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,7 +55,14 @@ fun AccountsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddSheet by remember { mutableStateOf(false) }
-    var editingAccount by remember { mutableStateOf<AccountEntity?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
 
     val spendable = state.accounts.filter { !it.account.type.isLiability && !it.account.type.isInvestmentOrAsset }
     val creditCards = state.accounts.filter { it.account.type == AccountType.CREDIT_CARD }
@@ -60,6 +70,7 @@ fun AccountsScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Accounts & Wallets", style = MaterialTheme.typography.headlineMedium) },
@@ -68,10 +79,7 @@ fun AccountsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = {
-                    editingAccount = null
-                    showAddSheet = true
-                },
+                onClick = { showAddSheet = true },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ) {
@@ -164,12 +172,12 @@ fun AccountsScreen(
 
     if (showAddSheet) {
         AddEditAccountSheet(
-            existing = editingAccount,
+            existing = null,
             defaultCurrency = state.primaryCurrency,
             onDismiss = { showAddSheet = false },
             onSave = { name, type, bank, masked, currency, opening, limit, billingDay, dueDay, notes ->
                 viewModel.saveAccount(
-                    existing = editingAccount,
+                    existing = null,
                     name = name,
                     type = type,
                     bankOrProvider = bank,

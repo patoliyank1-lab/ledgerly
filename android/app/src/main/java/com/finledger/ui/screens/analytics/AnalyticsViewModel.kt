@@ -25,6 +25,7 @@ data class AnalyticsUiState(
     val agingReport: List<AgingBucketPerson> = emptyList(),
     val netWorth: NetWorthBreakdown = NetWorthBreakdown(0, 0, 0, 0, 0, 0, 0, 0, 0),
     val netWorthSnapshots: List<NetWorthSnapshotEntity> = emptyList(),
+    val hasSelectedCategory: Boolean = false,
     val selectedCategoryId: Long? = null,
     val drilldownTransactions: List<TransactionWithDetails> = emptyList(),
     val primaryCurrency: String = "INR",
@@ -42,16 +43,17 @@ class AnalyticsViewModel @Inject constructor(
 
     private val initialBounds = GetMonthlySummaryUseCase.monthBounds()
     private val _dateRange = MutableStateFlow(initialBounds)
-    private val _selectedCategoryId = MutableStateFlow<Long?>(null)
+    private val _selectedCategory = MutableStateFlow<Pair<Boolean, Long?>>(false to null)
 
     private val categoryBreakdownFlow = _dateRange.flatMapLatest { (start, end) ->
         getCategoryBreakdownUseCase(start, end)
     }
 
-    private val drilldownFlow = combine(_selectedCategoryId, _dateRange) { catId, range ->
-        catId to range
-    }.flatMapLatest { (catId, range) ->
-        getCategoryBreakdownUseCase.observeTransactionsInCategory(catId, range.first, range.second)
+    private val drilldownFlow = combine(_selectedCategory, _dateRange) { sel, range ->
+        sel to range
+    }.flatMapLatest { (sel, range) ->
+        if (!sel.first) kotlinx.coroutines.flow.flowOf(emptyList())
+        else getCategoryBreakdownUseCase.observeTransactionsInCategory(sel.second, range.first, range.second)
     }
 
     val uiState: StateFlow<AnalyticsUiState> = combine<Any?, AnalyticsUiState>(
@@ -62,7 +64,7 @@ class AnalyticsViewModel @Inject constructor(
         getAgingReportUseCase(),
         getNetWorthUseCase(),
         getNetWorthUseCase.observeSnapshots(),
-        _selectedCategoryId,
+        _selectedCategory,
         drilldownFlow,
         userPreferencesRepository.preferences,
     ) { values ->
@@ -78,7 +80,8 @@ class AnalyticsViewModel @Inject constructor(
         val netWorth = values[5] as NetWorthBreakdown
         @Suppress("UNCHECKED_CAST")
         val snapshots = values[6] as List<NetWorthSnapshotEntity>
-        val selectedCat = values[7] as Long?
+        @Suppress("UNCHECKED_CAST")
+        val selectedCat = values[7] as Pair<Boolean, Long?>
         @Suppress("UNCHECKED_CAST")
         val drilldown = values[8] as List<TransactionWithDetails>
         val prefs = values[9] as com.finledger.domain.model.UserPreferences
@@ -92,7 +95,8 @@ class AnalyticsViewModel @Inject constructor(
             agingReport = aging,
             netWorth = netWorth,
             netWorthSnapshots = snapshots,
-            selectedCategoryId = selectedCat,
+            hasSelectedCategory = selectedCat.first,
+            selectedCategoryId = selectedCat.second,
             drilldownTransactions = drilldown,
             primaryCurrency = prefs.primaryCurrency,
         )
@@ -103,7 +107,12 @@ class AnalyticsViewModel @Inject constructor(
     }
 
     fun selectCategoryForDrilldown(categoryId: Long?) {
-        _selectedCategoryId.value = if (_selectedCategoryId.value == categoryId) null else categoryId
+        val current = _selectedCategory.value
+        _selectedCategory.value = if (current.first && current.second == categoryId) {
+            false to null
+        } else {
+            true to categoryId
+        }
     }
 
     fun recordNetWorthSnapshot(breakdown: NetWorthBreakdown) {

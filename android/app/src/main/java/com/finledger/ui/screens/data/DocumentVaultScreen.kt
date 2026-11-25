@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
@@ -36,11 +39,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,9 +74,17 @@ fun DocumentVaultScreen(
     viewModel: DataManagementViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf<DocumentType?>(null) }
     var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    LaunchedEffect(state.statusMessage) {
+        state.statusMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearStatus()
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         pendingUri = uri
@@ -83,6 +97,7 @@ fun DocumentVaultScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Document Vault", style = MaterialTheme.typography.headlineMedium) },
@@ -115,6 +130,26 @@ fun DocumentVaultScreen(
                 placeholder = "Search receipts, invoices, agreements…",
                 modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
             )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = Spacing.md, vertical = Spacing.xxs),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                FilterChip(
+                    selected = selectedType == null,
+                    onClick = { selectedType = null },
+                    label = { Text("All") },
+                )
+                DocumentType.entries.forEach { t ->
+                    FilterChip(
+                        selected = selectedType == t,
+                        onClick = { selectedType = if (selectedType == t) null else t },
+                        label = { Text(t.displayName) },
+                    )
+                }
+            }
 
             if (filtered.isEmpty()) {
                 EmptyStateView(
@@ -169,16 +204,32 @@ fun DocumentVaultScreen(
 
     pendingUri?.let { uri ->
         var name by remember { mutableStateOf("") }
+        var nameError by remember { mutableStateOf(false) }
         var docType by remember { mutableStateOf(DocumentType.RECEIPT) }
         var notes by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { pendingUri = null },
             title = { Text("Save to Vault") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Document Name") }, singleLine = true)
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            nameError = false
+                        },
+                        label = { Text("Document Name") },
+                        isError = nameError,
+                        supportingText = if (nameError) {
+                            { Text("Document name is required") }
+                        } else null,
+                        singleLine = true,
+                    )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
-                        listOf(DocumentType.RECEIPT, DocumentType.INVOICE, DocumentType.LOAN_AGREEMENT, DocumentType.BANK_STATEMENT, DocumentType.OTHER).forEach { t ->
+                        DocumentType.entries.forEach { t ->
                             FilterChip(selected = docType == t, onClick = { docType = t }, label = { Text(t.displayName) })
                         }
                     }
@@ -188,7 +239,11 @@ fun DocumentVaultScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.saveDocument(uri, name, docType, notes)
+                        if (name.isBlank()) {
+                            nameError = true
+                            return@Button
+                        }
+                        viewModel.saveDocument(uri, name.trim(), docType, notes.trim())
                         pendingUri = null
                     },
                     shape = MaterialTheme.shapes.extraLarge,

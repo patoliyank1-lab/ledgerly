@@ -65,6 +65,9 @@ data class UserPreferences(
     val pinEnabled: Boolean = false,
     val biometricEnabled: Boolean = false,
     val notificationsEnabled: Boolean = true,
+    val billRemindersEnabled: Boolean = true,
+    val loanRemindersEnabled: Boolean = true,
+    val budgetAlertsEnabled: Boolean = true,
     val autoBackupEnabled: Boolean = false,
 )
 

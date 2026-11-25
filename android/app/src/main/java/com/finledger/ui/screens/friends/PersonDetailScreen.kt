@@ -1,6 +1,7 @@
 package com.finledger.ui.screens.friends
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,7 +15,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,11 +26,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,9 +64,21 @@ fun PersonDetailScreen(
     val settlements by viewModel.observeSettlements(personId).collectAsStateWithLifecycle()
     val summary = state.balances.firstOrNull { it.person.id == personId }
     var showEditSheet by remember { mutableStateOf(false) }
+    var showArchiveConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var inspectingSettlement by remember { mutableStateOf<SettlementEntity?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(person?.name ?: "Person Ledger", style = MaterialTheme.typography.headlineMedium) },
@@ -71,6 +91,12 @@ fun PersonDetailScreen(
                     if (person != null) {
                         IconButton(onClick = { showEditSheet = true }) {
                             Icon(Icons.Outlined.Edit, contentDescription = "Edit person")
+                        }
+                        IconButton(onClick = { showArchiveConfirm = true }) {
+                            Icon(Icons.Outlined.Archive, contentDescription = "Archive person")
+                        }
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete person")
                         }
                     }
                 },
@@ -183,7 +209,11 @@ fun PersonDetailScreen(
                     )
                 }
                 items(settlements, key = { "sh_${it.id}" }) { s ->
-                    SettlementHistoryRow(s, state.primaryCurrency)
+                    SettlementHistoryRow(
+                        settlement = s,
+                        currency = state.primaryCurrency,
+                        onClick = { inspectingSettlement = s },
+                    )
                 }
             }
         }
@@ -200,10 +230,79 @@ fun PersonDetailScreen(
             },
         )
     }
+
+    if (showArchiveConfirm && person != null) {
+        AlertDialog(
+            onDismissRequest = { showArchiveConfirm = false },
+            title = { Text("Archive ${person!!.name}?") },
+            text = { Text("Archived contacts are hidden from active lists while keeping all ledger history.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showArchiveConfirm = false
+                        viewModel.archivePerson(personId, onDone = onBack)
+                    },
+                ) { Text("Archive") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showArchiveConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showDeleteConfirm && person != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete ${person!!.name}?") },
+            text = { Text("This contact will be moved to Trash.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deletePerson(personId, onDone = onBack)
+                    },
+                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    inspectingSettlement?.let { st ->
+        AlertDialog(
+            onDismissRequest = { inspectingSettlement = null },
+            title = { Text(if (st.direction == SettlementDirection.RECEIVED) "Settlement Received" else "Settlement Paid") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(MoneyFormatter.format(st.amount, state.primaryCurrency), style = MaterialTheme.typography.headlineMedium)
+                    Text("Date: ${DateFormatter.formatDate(st.date)}", style = MaterialTheme.typography.bodySmall)
+                    if (st.paymentMethod.isNotBlank()) Text("Method: ${st.paymentMethod}", style = MaterialTheme.typography.bodySmall)
+                    if (st.referenceNumber.isNotBlank()) Text("Ref: ${st.referenceNumber}", style = MaterialTheme.typography.bodySmall)
+                    if (st.notes.isNotBlank()) Text("Notes: ${st.notes}", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteSettlement(st)
+                        inspectingSettlement = null
+                    },
+                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { inspectingSettlement = null }) { Text("Close") }
+            },
+        )
+    }
 }
 
 @Composable
-fun SettlementHistoryRow(settlement: SettlementEntity, currency: String) {
+fun SettlementHistoryRow(
+    settlement: SettlementEntity,
+    currency: String,
+    onClick: () -> Unit = {},
+) {
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -211,7 +310,8 @@ fun SettlementHistoryRow(settlement: SettlementEntity, currency: String) {
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.md, vertical = Spacing.xxs),
+            .padding(horizontal = Spacing.md, vertical = Spacing.xxs)
+            .clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier

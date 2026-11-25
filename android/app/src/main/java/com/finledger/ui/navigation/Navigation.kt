@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -111,7 +112,15 @@ fun FinLedgerNavHost(
                 onAddSharedExpense = { navController.navigate(Screen.AddSharedExpense.createRoute()) },
                 onAddLoan = { navController.navigate(Screen.AddLoan.route) },
                 onRecordSettlement = { navController.navigate(Screen.RecordSettlement.createRoute()) },
-                onSeeAllTransactions = { navController.navigate(Screen.Transactions.route) },
+                onSeeAllTransactions = {
+                    navController.navigate(Screen.Transactions.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 onOpenTransaction = { id -> navController.navigate(Screen.TransactionDetail.createRoute(id)) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onOpenBills = { navController.navigate(Screen.Bills.route) },
@@ -219,11 +228,27 @@ fun FinLedgerNavHost(
         }
         composable(
             route = Screen.RecordSettlement.route,
-            arguments = listOf(navArgument("personId") { type = NavType.LongType; defaultValue = -1L })
+            arguments = listOf(
+                navArgument("personId") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("groupId") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("eventId") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("direction") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("amountPaise") { type = NavType.LongType; defaultValue = -1L },
+            )
         ) { entry ->
             val id = entry.arguments?.getLong("personId")?.takeIf { it > 0L }
+            val gid = entry.arguments?.getLong("groupId")?.takeIf { it > 0L }
+            val eid = entry.arguments?.getLong("eventId")?.takeIf { it > 0L }
+            val dir = entry.arguments?.getString("direction")?.let {
+                runCatching { com.finledger.data.local.entity.SettlementDirection.valueOf(it) }.getOrNull()
+            }
+            val amt = entry.arguments?.getLong("amountPaise")?.takeIf { it > 0L }
             RecordSettlementScreen(
                 initialPersonId = id,
+                initialGroupId = gid,
+                initialEventId = eid,
+                initialDirection = dir,
+                initialAmountPaise = amt,
                 onBack = { navController.popBackStack() },
             )
         }
@@ -255,7 +280,19 @@ fun FinLedgerNavHost(
                 onEditGroup = { gid -> navController.navigate(Screen.CreateEditGroup.createRoute(gid)) },
                 onAddEvent = { gid -> navController.navigate(Screen.CreateEditEvent.createRoute(groupId = gid)) },
                 onOpenEvent = { eid -> navController.navigate(Screen.EventDetail.createRoute(eid)) },
-                onAddSharedExpense = { gid -> navController.navigate(Screen.AddSharedExpense.createRoute(groupId = gid)) },
+                onAddSharedExpense = { gid, eid ->
+                    navController.navigate(Screen.AddSharedExpense.createRoute(eventId = eid, groupId = gid))
+                },
+                onSettleSuggestion = { pid, dir, amt, gid ->
+                    navController.navigate(
+                        Screen.RecordSettlement.createRoute(
+                            personId = pid,
+                            groupId = gid,
+                            direction = dir.name,
+                            amountPaise = amt,
+                        )
+                    )
+                },
             )
         }
         composable(Screen.Events.route) {
@@ -292,6 +329,7 @@ fun FinLedgerNavHost(
                     navController.navigate(Screen.AddSharedExpense.createRoute(eventId = evId, groupId = gId))
                 },
                 onOpenSummary = { evId -> navController.navigate(Screen.EventSummary.createRoute(evId)) },
+                onEditEvent = { evId -> navController.navigate(Screen.CreateEditEvent.createRoute(eventId = evId)) },
             )
         }
         composable(
@@ -317,6 +355,17 @@ fun FinLedgerNavHost(
             EventSummaryScreen(
                 eventId = eid,
                 onBack = { navController.popBackStack() },
+                onSettleSuggestion = { pid, dir, amt, gid, evId ->
+                    navController.navigate(
+                        Screen.RecordSettlement.createRoute(
+                            personId = pid,
+                            groupId = gid,
+                            eventId = evId,
+                            direction = dir.name,
+                            amountPaise = amt,
+                        )
+                    )
+                },
             )
         }
         composable(Screen.Balances.route) {
@@ -363,6 +412,7 @@ fun FinLedgerNavHost(
             BillsScreen(
                 onBack = { navController.popBackStack() },
                 onAddBill = { navController.navigate(Screen.AddEditBill.createRoute()) },
+                onEditBill = { bid -> navController.navigate(Screen.AddEditBill.createRoute(billId = bid)) },
             )
         }
         composable(
@@ -379,30 +429,37 @@ fun FinLedgerNavHost(
             BudgetsScreen(
                 onBack = { navController.popBackStack() },
                 onAddBudget = { navController.navigate(Screen.AddEditBudget.createRoute()) },
+                onEditBudget = { bid -> navController.navigate(Screen.AddEditBudget.createRoute(budgetId = bid)) },
             )
         }
         composable(
             route = Screen.AddEditBudget.route,
             arguments = listOf(navArgument("budgetId") { type = NavType.LongType; defaultValue = -1L })
-        ) {
-            AddEditBudgetScreen(onBack = { navController.popBackStack() })
+        ) { entry ->
+            val bid = entry.arguments?.getLong("budgetId")?.takeIf { it > 0L }
+            AddEditBudgetScreen(
+                budgetId = bid,
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(Screen.SavingsGoals.route) {
             SavingsGoalsScreen(
                 onBack = { navController.popBackStack() },
                 onAddGoal = { navController.navigate(Screen.AddEditGoal.createRoute()) },
+                onEditGoal = { gid -> navController.navigate(Screen.AddEditGoal.createRoute(goalId = gid)) },
             )
         }
         composable(
             route = Screen.AddEditGoal.route,
             arguments = listOf(navArgument("goalId") { type = NavType.LongType; defaultValue = -1L })
-        ) {
-            AddEditGoalScreen(onBack = { navController.popBackStack() })
+        ) { entry ->
+            val gid = entry.arguments?.getLong("goalId")?.takeIf { it > 0L }
+            AddEditGoalScreen(
+                goalId = gid,
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(Screen.NotificationSettings.route) {
-            NotificationSettingsScreen(onBack = { navController.popBackStack() })
-        }
-        composable(Screen.ReminderSettings.route) {
             NotificationSettingsScreen(onBack = { navController.popBackStack() })
         }
 
@@ -437,7 +494,13 @@ fun FinLedgerNavHost(
             NetWorthScreen(onBack = { navController.popBackStack() })
         }
         composable(Screen.FinancialCalendar.route) {
-            FinancialCalendarScreen(onBack = { navController.popBackStack() })
+            FinancialCalendarScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTransaction = { txId -> navController.navigate(Screen.TransactionDetail.createRoute(txId)) },
+                onOpenBills = { navController.navigate(Screen.Bills.route) },
+                onOpenLoan = { lid -> navController.navigate(Screen.LoanDetail.createRoute(lid)) },
+                onOpenEvent = { eid -> navController.navigate(Screen.EventDetail.createRoute(eid)) },
+            )
         }
 
         // Phase 5 routes
@@ -470,14 +533,6 @@ fun FinLedgerNavHost(
         }
         composable(Screen.ImportHistory.route) {
             ImportHistoryScreen(onBack = { navController.popBackStack() })
-        }
-        composable(Screen.BackupSettings.route) {
-            ImportExportScreen(
-                onBack = { navController.popBackStack() },
-                onOpenColumnMapper = { navController.navigate(Screen.ColumnMapper.route) },
-                onOpenImportHistory = { navController.navigate(Screen.ImportHistory.route) },
-                onOpenRestore = { navController.navigate(Screen.Restore.route) },
-            )
         }
         composable(Screen.Restore.route) {
             RestoreScreen(onBack = { navController.popBackStack() })

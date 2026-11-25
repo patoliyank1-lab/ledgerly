@@ -129,6 +129,7 @@ class AppLockManager @Inject constructor() {
 class SecurityViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val accountRepository: AccountRepository,
+    private val databaseSeeder: com.finledger.data.local.DatabaseSeeder,
 ) : ViewModel() {
 
     val securityState = combine(
@@ -179,7 +180,10 @@ class SecurityViewModel @Inject constructor(
                         openingBalance = openingBalancePaise,
                     )
                 )
+            } else {
+                databaseSeeder.seedInitialCashWallet(currency)
             }
+            userPreferencesRepository.setCashWalletSeeded(true)
             userPreferencesRepository.setOnboardingCompleted(true)
             onDone()
         }
@@ -198,9 +202,13 @@ fun PinLockSettingsScreen(
 ) {
     val pair = viewModel.securityState.collectAsStateWithLifecycle().value
     val prefs = pair?.first
+    val storedHash = pair?.second
     val context = LocalContext.current
+    var currentPinInput by remember { mutableStateOf("") }
     var pinInput by remember { mutableStateOf("") }
+    var confirmPinInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -227,9 +235,21 @@ fun PinLockSettingsScreen(
                 text = if (prefs?.pinEnabled == true) "PIN Lock is Enabled" else "Set a 4-6 digit PIN to protect your offline ledger.",
                 style = MaterialTheme.typography.bodyLarge,
             )
+            if (prefs?.pinEnabled == true) {
+                OutlinedTextField(
+                    value = currentPinInput,
+                    onValueChange = { currentPinInput = it.filter(Char::isDigit).take(6); error = null; statusMessage = null },
+                    label = { Text("Current PIN") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             OutlinedTextField(
                 value = pinInput,
-                onValueChange = { pinInput = it.filter(Char::isDigit).take(6); error = null },
+                onValueChange = { pinInput = it.filter(Char::isDigit).take(6); error = null; statusMessage = null },
                 label = { Text("New PIN (4–6 digits)") },
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -237,15 +257,39 @@ fun PinLockSettingsScreen(
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
             )
+            OutlinedTextField(
+                value = confirmPinInput,
+                onValueChange = { confirmPinInput = it.filter(Char::isDigit).take(6); error = null; statusMessage = null },
+                label = { Text("Confirm New PIN") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                singleLine = true,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth(),
+            )
             error?.let { Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall) }
+            statusMessage?.let { Text(it, color = FinLedgerTheme.colors.positive, style = MaterialTheme.typography.bodySmall) }
 
             Button(
                 onClick = {
+                    if (prefs?.pinEnabled == true && !viewModel.verifyPin(currentPinInput, storedHash)) {
+                        error = "Current PIN is incorrect"
+                        return@Button
+                    }
                     if (pinInput.length < 4) {
                         error = "PIN must be at least 4 digits"
                         return@Button
                     }
-                    viewModel.setPin(pinInput) { pinInput = "" }
+                    if (pinInput != confirmPinInput) {
+                        error = "PIN entries do not match"
+                        return@Button
+                    }
+                    viewModel.setPin(pinInput) {
+                        currentPinInput = ""
+                        pinInput = ""
+                        confirmPinInput = ""
+                        statusMessage = "PIN saved successfully"
+                    }
                 },
                 shape = MaterialTheme.shapes.extraLarge,
                 modifier = Modifier.fillMaxWidth(),
@@ -265,7 +309,18 @@ fun PinLockSettingsScreen(
                     )
                 }
                 OutlinedButton(
-                    onClick = { viewModel.disablePin {} },
+                    onClick = {
+                        if (!viewModel.verifyPin(currentPinInput, storedHash)) {
+                            error = "Enter your current PIN to disable PIN lock"
+                            return@OutlinedButton
+                        }
+                        viewModel.disablePin {
+                            currentPinInput = ""
+                            pinInput = ""
+                            confirmPinInput = ""
+                            statusMessage = "PIN lock disabled"
+                        }
+                    },
                     shape = MaterialTheme.shapes.extraLarge,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Disable PIN Lock") }
@@ -278,9 +333,11 @@ fun PinLockSettingsScreen(
 fun PinUnlockOverlay(
     storedHash: String?,
     biometricEnabled: Boolean,
+    onRequestBiometric: () -> Unit = {},
     onUnlocked: () -> Unit,
     viewModel: SecurityViewModel = hiltViewModel(),
 ) {
+    val context = LocalContext.current
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
 
@@ -320,6 +377,14 @@ fun PinUnlockOverlay(
                 shape = MaterialTheme.shapes.extraLarge,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Unlock") }
+            if (biometricEnabled && BiometricHelper.isAvailable(context)) {
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                OutlinedButton(
+                    onClick = onRequestBiometric,
+                    shape = MaterialTheme.shapes.extraLarge,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Unlock with Biometrics") }
+            }
         }
     }
 }

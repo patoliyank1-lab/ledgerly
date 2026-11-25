@@ -2,6 +2,8 @@ package com.finledger.ui.screens.transactions
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +43,7 @@ import com.finledger.ui.components.DatePickerField
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddIncomeScreen(
     onBack: () -> Unit,
@@ -54,6 +58,7 @@ fun AddIncomeScreen(
     var source by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var selectedTags by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var amountError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.accounts, state.incomeCategories) {
@@ -144,7 +149,25 @@ fun AddIncomeScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            state.errorMessage?.let {
+            if (state.tags.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text("Tags", style = MaterialTheme.typography.titleSmall, color = FinLedgerTheme.colors.inkMuted48)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        state.tags.forEach { tag ->
+                            val selected = tag.id in selectedTags
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    selectedTags = if (selected) selectedTags - tag.id else selectedTags + tag.id
+                                },
+                                label = { Text(tag.name) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            (amountError ?: state.errorMessage)?.let {
                 Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall)
             }
 
@@ -155,7 +178,10 @@ fun AddIncomeScreen(
                         amountError = "Enter a valid positive amount"
                         return@Button
                     }
-                    val accountId = selectedAccountId ?: return@Button
+                    val accountId = selectedAccountId ?: run {
+                        amountError = "Please create or select an account first"
+                        return@Button
+                    }
                     viewModel.addIncome(
                         amountPaise = paise,
                         accountId = accountId,
@@ -164,7 +190,7 @@ fun AddIncomeScreen(
                         source = source,
                         description = description,
                         notes = notes,
-                        tagIds = emptyList(),
+                        tagIds = selectedTags.toList(),
                         onSuccess = onBack,
                     )
                 },

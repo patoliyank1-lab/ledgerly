@@ -3,6 +3,7 @@ package com.finledger.ui.screens.loans
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.finledger.data.local.entity.LoanRepaymentEntity
+import com.finledger.data.local.entity.LoanStatus
 import com.finledger.data.local.entity.LoanType
 import com.finledger.data.local.entity.PersonEntity
 import com.finledger.data.repository.CommitmentRepository
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 data class LoansUiState(
@@ -66,9 +68,12 @@ class LoansViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LoansUiState())
 
-    fun observeRepayments(loanId: Long): StateFlow<List<LoanRepaymentEntity>> =
+    private val repaymentFlows = ConcurrentHashMap<Long, StateFlow<List<LoanRepaymentEntity>>>()
+
+    fun observeRepayments(loanId: Long): StateFlow<List<LoanRepaymentEntity>> = repaymentFlows.getOrPut(loanId) {
         commitmentRepository.observeRepaymentsForLoan(loanId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
 
     fun createLoan(
         type: LoanType,
@@ -127,6 +132,19 @@ class LoansViewModel @Inject constructor(
                 _error.value = null
                 onSuccess()
             }.onFailure { _error.value = it.message }
+        }
+    }
+
+    fun closeLoan(loanId: Long) {
+        viewModelScope.launch {
+            commitmentRepository.updateLoanStatus(loanId, LoanStatus.CLOSED)
+        }
+    }
+
+    fun deleteLoan(loanId: Long, onDone: () -> Unit) {
+        viewModelScope.launch {
+            commitmentRepository.deleteLoan(loanId)
+            onDone()
         }
     }
 }

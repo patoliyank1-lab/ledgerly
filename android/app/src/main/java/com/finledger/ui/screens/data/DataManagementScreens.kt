@@ -16,9 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,8 +33,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -48,6 +56,7 @@ import com.finledger.domain.usecase.ColumnMapping
 import com.finledger.domain.usecase.ImportRowStatus
 import com.finledger.domain.util.DateFormatter
 import com.finledger.ui.components.AccountPickerDropdown
+import com.finledger.ui.components.EmptyStateView
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -77,7 +86,7 @@ fun ImportExportScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            viewModel.loadCsvFromUri(it, "transactions_import.csv", onLoaded = onOpenColumnMapper)
+            viewModel.loadCsvFromUri(it, onLoaded = onOpenColumnMapper)
         }
     }
 
@@ -114,7 +123,22 @@ fun ImportExportScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     ) {
-                        Text(msg, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(Spacing.md))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = viewModel::clearStatus) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Dismiss")
+                            }
+                        }
                     }
                 }
             }
@@ -226,8 +250,23 @@ fun ColumnMapperScreen(
     val headers = state.csvTable?.headers.orEmpty()
     var dateIdx by remember { mutableIntStateOf(state.columnMapping.dateIndex) }
     var amountIdx by remember { mutableIntStateOf(state.columnMapping.amountIndex) }
+    var typeIdx by remember { mutableStateOf(state.columnMapping.typeIndex) }
     var merchantIdx by remember { mutableStateOf(state.columnMapping.merchantIndex) }
+    var descriptionIdx by remember { mutableStateOf(state.columnMapping.descriptionIndex) }
+    var notesIdx by remember { mutableStateOf(state.columnMapping.notesIndex) }
+    var positiveIsIncome by remember { mutableStateOf(state.columnMapping.positiveIsIncome) }
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }
+    var accountError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(state.csvTable, state.columnMapping) {
+        dateIdx = state.columnMapping.dateIndex
+        amountIdx = state.columnMapping.amountIndex
+        typeIdx = state.columnMapping.typeIndex
+        merchantIdx = state.columnMapping.merchantIndex
+        descriptionIdx = state.columnMapping.descriptionIndex
+        notesIdx = state.columnMapping.notesIndex
+        positiveIsIncome = state.columnMapping.positiveIsIncome
+    }
 
     LaunchedEffect(state.accounts) {
         if (selectedAccountId == null && state.accounts.isNotEmpty()) {
@@ -253,15 +292,29 @@ fun ColumnMapperScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(Spacing.md),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
+            if (state.csvFileName.isNotBlank()) {
+                Text(
+                    text = "File: ${state.csvFileName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FinLedgerTheme.colors.inkMuted48,
+                )
+            }
             AccountPickerDropdown(
                 accounts = state.accounts,
                 selectedAccountId = selectedAccountId,
-                onSelectAccount = { selectedAccountId = it.account.id },
+                onSelectAccount = {
+                    selectedAccountId = it.account.id
+                    accountError = null
+                },
                 label = "Import Into Account",
             )
+            accountError?.let {
+                Text(it, style = MaterialTheme.typography.labelMedium, color = FinLedgerTheme.colors.negative)
+            }
             Text("Date Column", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 headers.forEachIndexed { idx, h ->
@@ -274,18 +327,44 @@ fun ColumnMapperScreen(
                     FilterChip(selected = amountIdx == idx, onClick = { amountIdx = idx }, label = { Text(h) })
                 }
             }
-            Text("Merchant / Description Column", style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                headers.forEachIndexed { idx, h ->
-                    FilterChip(selected = merchantIdx == idx, onClick = { merchantIdx = idx }, label = { Text(h) })
+            OptionalColumnChips("Type Column (Credit/Debit)", headers, typeIdx) { typeIdx = it }
+            OptionalColumnChips("Merchant / Payee Column", headers, merchantIdx) { merchantIdx = it }
+            OptionalColumnChips("Description Column", headers, descriptionIdx) { descriptionIdx = it }
+            OptionalColumnChips("Notes Column", headers, notesIdx) { notesIdx = it }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Treat positive amounts as Income", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "When no Type column matches, negative values stay Expenses and positive values import as Income.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = FinLedgerTheme.colors.inkMuted48,
+                    )
                 }
+                Switch(checked = positiveIsIncome, onCheckedChange = { positiveIsIncome = it })
             }
-            Spacer(modifier = Modifier.weight(1f))
+
             Button(
                 onClick = {
-                    val accId = selectedAccountId ?: return@Button
+                    val accId = selectedAccountId
+                    if (accId == null) {
+                        accountError = "Select a target account first"
+                        return@Button
+                    }
                     viewModel.updateMappingAndAnalyze(
-                        mapping = ColumnMapping(dateIndex = dateIdx, amountIndex = amountIdx, merchantIndex = merchantIdx),
+                        mapping = ColumnMapping(
+                            dateIndex = dateIdx,
+                            amountIndex = amountIdx,
+                            typeIndex = typeIdx,
+                            merchantIndex = merchantIdx,
+                            descriptionIndex = descriptionIdx,
+                            notesIndex = notesIdx,
+                            positiveIsIncome = positiveIsIncome,
+                        ),
                         targetAccountId = accId,
                         currency = state.primaryCurrency,
                         onReady = onPreviewReady,
@@ -298,6 +377,23 @@ fun ColumnMapperScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OptionalColumnChips(
+    title: String,
+    headers: List<String>,
+    selectedIdx: Int?,
+    onSelect: (Int?) -> Unit,
+) {
+    Text(title, style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        FilterChip(selected = selectedIdx == null, onClick = { onSelect(null) }, label = { Text("None") })
+        headers.forEachIndexed { idx, h ->
+            FilterChip(selected = selectedIdx == idx, onClick = { onSelect(idx) }, label = { Text(h) })
+        }
+    }
+}
+
 @Composable
 fun ImportPreviewScreen(
     onBack: () -> Unit,
@@ -305,8 +401,16 @@ fun ImportPreviewScreen(
     viewModel: DataManagementViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     var skipDuplicates by remember { mutableStateOf(true) }
     var allowPartial by remember { mutableStateOf(true) }
+
+    LaunchedEffect(state.statusMessage) {
+        state.statusMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearStatus()
+        }
+    }
 
     val validCount = state.analyzedRows.count { it.status == ImportRowStatus.VALID }
     val invalidCount = state.analyzedRows.count { it.status == ImportRowStatus.INVALID }
@@ -314,6 +418,7 @@ fun ImportPreviewScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Import Preview", style = MaterialTheme.typography.headlineMedium) },
@@ -443,9 +548,19 @@ fun ImportHistoryScreen(
     viewModel: DataManagementViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var pendingRollbackId by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(state.statusMessage) {
+        state.statusMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearStatus()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Import History", style = MaterialTheme.typography.headlineMedium) },
@@ -458,45 +573,76 @@ fun ImportHistoryScreen(
             )
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(Spacing.md),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-        ) {
-            items(state.importHistory, key = { it.id }) { batch ->
-                Card(
-                    shape = MaterialTheme.shapes.large,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.md),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+        if (state.importHistory.isEmpty()) {
+            EmptyStateView(
+                icon = Icons.Outlined.UploadFile,
+                title = "No CSV imports yet",
+                subtitle = "Imported CSV batches will appear here with rollback support.",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                items(state.importHistory, key = { it.id }) { batch ->
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("${batch.fileName} (${batch.status.name})", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                text = "${DateFormatter.formatDate(batch.importedAt)} · ${batch.successRows}/${batch.totalRows} imported",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = FinLedgerTheme.colors.inkMuted48,
-                            )
-                        }
-                        if (batch.canRollback) {
-                            OutlinedButton(
-                                onClick = { viewModel.rollbackImport(batch.id) },
-                                shape = MaterialTheme.shapes.extraLarge,
-                            ) { Text("Rollback") }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.md),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("${batch.fileName} (${batch.status.name})", style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    text = "${DateFormatter.formatDate(batch.importedAt)} · ${batch.successRows}/${batch.totalRows} imported",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = FinLedgerTheme.colors.inkMuted48,
+                                )
+                            }
+                            if (batch.canRollback) {
+                                OutlinedButton(
+                                    onClick = { pendingRollbackId = batch.id },
+                                    shape = MaterialTheme.shapes.extraLarge,
+                                ) { Text("Rollback") }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    pendingRollbackId?.let { batchId ->
+        AlertDialog(
+            onDismissRequest = { pendingRollbackId = null },
+            title = { Text("Rollback Import #$batchId?") },
+            text = { Text("All transactions imported in this batch will be soft-deleted.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.rollbackImport(batchId)
+                        pendingRollbackId = null
+                    },
+                    shape = MaterialTheme.shapes.extraLarge,
+                ) { Text("Rollback") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRollbackId = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -506,12 +652,21 @@ fun RestoreScreen(
     viewModel: DataManagementViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::loadBackupForPreview)
     }
 
+    LaunchedEffect(state.statusMessage) {
+        state.statusMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearStatus()
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Restore Backup", style = MaterialTheme.typography.headlineMedium) },

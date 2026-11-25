@@ -24,20 +24,23 @@ class LoanReminderWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val prefs = userPreferencesRepository.preferences.first()
-        if (!prefs.notificationsEnabled) return Result.success()
+        if (!prefs.notificationsEnabled || !prefs.loanRemindersEnabled) return Result.success()
 
         val now = System.currentTimeMillis()
         val threeDaysMs = 3 * 86_400_000L
         val loans = loanDao.getAllOnce().filter { it.status != LoanStatus.CLOSED && it.expectedRepaymentDate != null }
         for (loan in loans) {
             val due = loan.expectedRepaymentDate ?: continue
+            val repaidPrincipal = loanDao.getRepaymentsForLoanOnce(loan.id).sumOf { it.principalAmount }
+            val remaining = (loan.principalAmount - repaidPrincipal).coerceAtLeast(0L)
+            if (remaining <= 0L) continue
             if (due <= now + threeDaysMs) {
                 val title = if (loan.type == LoanType.LENT) {
                     "Loan Collection Due: ${loan.personOrOrg}"
                 } else {
                     "Loan Repayment Due: ${loan.personOrOrg}"
                 }
-                val body = "Principal ${MoneyFormatter.format(loan.principalAmount, loan.currency)} due ${DateFormatter.formatDate(due)}"
+                val body = "Remaining ${MoneyFormatter.format(remaining, loan.currency)} due ${DateFormatter.formatDate(due)}"
                 NotificationHelper.showNotification(
                     context = context,
                     channelId = NotificationHelper.CHANNEL_REMINDERS,

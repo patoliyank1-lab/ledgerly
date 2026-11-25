@@ -36,9 +36,24 @@ sealed class Screen(val route: String) {
     data object PersonDetail : Screen("person_detail/{personId}") {
         fun createRoute(personId: Long) = "person_detail/$personId"
     }
-    data object RecordSettlement : Screen("record_settlement?personId={personId}") {
-        fun createRoute(personId: Long? = null) =
-            if (personId != null) "record_settlement?personId=$personId" else "record_settlement"
+    data object RecordSettlement : Screen(
+        "record_settlement?personId={personId}&groupId={groupId}&eventId={eventId}&direction={direction}&amountPaise={amountPaise}"
+    ) {
+        fun createRoute(
+            personId: Long? = null,
+            groupId: Long? = null,
+            eventId: Long? = null,
+            direction: String? = null,
+            amountPaise: Long? = null,
+        ): String {
+            val params = mutableListOf<String>()
+            if (personId != null) params.add("personId=$personId")
+            if (groupId != null) params.add("groupId=$groupId")
+            if (eventId != null) params.add("eventId=$eventId")
+            if (direction != null) params.add("direction=$direction")
+            if (amountPaise != null && amountPaise > 0L) params.add("amountPaise=$amountPaise")
+            return if (params.isEmpty()) "record_settlement" else "record_settlement?${params.joinToString("&")}"
+        }
     }
     data object Groups : Screen("groups")
     data object CreateEditGroup : Screen("create_edit_group?groupId={groupId}") {
@@ -100,7 +115,6 @@ sealed class Screen(val route: String) {
             if (goalId != null) "add_edit_goal?goalId=$goalId" else "add_edit_goal"
     }
     data object NotificationSettings : Screen("notification_settings")
-    data object ReminderSettings : Screen("reminder_settings")
 
     // Analytics, Investments, Net Worth, Calendar (Phase 4)
     data object Analytics : Screen("analytics")
@@ -118,7 +132,6 @@ sealed class Screen(val route: String) {
     data object ImportPreview : Screen("import_preview")
     data object ImportResult : Screen("import_result")
     data object ImportHistory : Screen("import_history")
-    data object BackupSettings : Screen("backup_settings")
     data object Restore : Screen("restore")
     data object DocumentVault : Screen("document_vault")
     data object DocumentViewer : Screen("document_viewer/{documentId}") {

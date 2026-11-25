@@ -27,7 +27,11 @@ class UserPreferencesRepository @Inject constructor(
         val PIN_HASH = stringPreferencesKey("pin_hash")
         val BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
+        val BILL_REMINDERS_ENABLED = booleanPreferencesKey("bill_reminders_enabled")
+        val LOAN_REMINDERS_ENABLED = booleanPreferencesKey("loan_reminders_enabled")
+        val BUDGET_ALERTS_ENABLED = booleanPreferencesKey("budget_alerts_enabled")
         val AUTO_BACKUP_ENABLED = booleanPreferencesKey("auto_backup_enabled")
+        val CASH_WALLET_SEEDED = booleanPreferencesKey("cash_wallet_seeded")
     }
 
     val preferences: Flow<UserPreferences> = dataStore.data.map { prefs ->
@@ -42,6 +46,9 @@ class UserPreferencesRepository @Inject constructor(
             pinEnabled = prefs[Keys.PIN_ENABLED] ?: false,
             biometricEnabled = prefs[Keys.BIOMETRIC_ENABLED] ?: false,
             notificationsEnabled = prefs[Keys.NOTIFICATIONS_ENABLED] ?: true,
+            billRemindersEnabled = prefs[Keys.BILL_REMINDERS_ENABLED] ?: true,
+            loanRemindersEnabled = prefs[Keys.LOAN_REMINDERS_ENABLED] ?: true,
+            budgetAlertsEnabled = prefs[Keys.BUDGET_ALERTS_ENABLED] ?: true,
             autoBackupEnabled = prefs[Keys.AUTO_BACKUP_ENABLED] ?: false,
         )
     }
@@ -88,8 +95,26 @@ class UserPreferencesRepository @Inject constructor(
         dataStore.edit { it[Keys.NOTIFICATIONS_ENABLED] = enabled }
     }
 
+    suspend fun setBillRemindersEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.BILL_REMINDERS_ENABLED] = enabled }
+    }
+
+    suspend fun setLoanRemindersEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.LOAN_REMINDERS_ENABLED] = enabled }
+    }
+
+    suspend fun setBudgetAlertsEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.BUDGET_ALERTS_ENABLED] = enabled }
+    }
+
     suspend fun setAutoBackupEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.AUTO_BACKUP_ENABLED] = enabled }
+    }
+
+    val cashWalletSeeded: Flow<Boolean> = dataStore.data.map { it[Keys.CASH_WALLET_SEEDED] ?: false }
+
+    suspend fun setCashWalletSeeded(seeded: Boolean) {
+        dataStore.edit { it[Keys.CASH_WALLET_SEEDED] = seeded }
     }
 }
 

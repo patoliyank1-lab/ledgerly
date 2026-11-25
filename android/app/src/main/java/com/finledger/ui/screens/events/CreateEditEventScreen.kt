@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,9 @@ fun CreateEditEventScreen(
     viewModel: EventsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val existing = remember(eventId, state.events) {
+        eventId?.let { id -> state.events.firstOrNull { it.event.id == id }?.event }
+    }
 
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -58,12 +62,42 @@ fun CreateEditEventScreen(
     var budgetText by remember { mutableStateOf("") }
     var selectedParticipantIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var nameError by remember { mutableStateOf(false) }
+    var populatedEventId by remember { mutableStateOf<Long?>(null) }
+    var participantsEditedManually by remember { mutableStateOf(false) }
+
+    LaunchedEffect(existing, state.eventParticipants) {
+        if (existing != null && populatedEventId != existing.id) {
+            name = existing.name
+            description = existing.description
+            location = existing.location
+            selectedGroupId = existing.groupId
+            startDateMs = existing.startDate
+            budgetText = existing.budgetAmount?.let { MoneyFormatter.paiseToInputString(it) } ?: ""
+            selectedParticipantIds = state.eventParticipants
+                .filter { it.eventId == existing.id }
+                .map { it.personId }
+                .toSet()
+            populatedEventId = existing.id
+        }
+    }
+
+    LaunchedEffect(selectedGroupId, state.groupMembers, existing) {
+        if (existing == null && !participantsEditedManually && selectedGroupId != null) {
+            val groupMemberIds = state.groupMembers
+                .filter { it.groupId == selectedGroupId }
+                .map { it.personId }
+                .toSet()
+            if (groupMemberIds.isNotEmpty()) {
+                selectedParticipantIds = groupMemberIds
+            }
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Create Event", style = MaterialTheme.typography.headlineMedium) },
+                title = { Text(if (existing != null) "Edit Event" else "Create Event", style = MaterialTheme.typography.headlineMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -132,6 +166,7 @@ fun CreateEditEventScreen(
                     FilterChip(
                         selected = selected,
                         onClick = {
+                            participantsEditedManually = true
                             selectedParticipantIds = if (selected) selectedParticipantIds - person.id else selectedParticipantIds + person.id
                         },
                         label = { Text(person.name) },
@@ -158,7 +193,7 @@ fun CreateEditEventScreen(
                         return@Button
                     }
                     viewModel.saveEvent(
-                        existing = null,
+                        existing = existing,
                         name = name,
                         description = description,
                         location = location,

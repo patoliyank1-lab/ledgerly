@@ -25,9 +25,20 @@ class InsightRepository @Inject constructor(
     suspend fun getInvestmentById(id: Long): InvestmentEntity? = investmentDao.getById(id)
 
     suspend fun saveInvestment(investment: InvestmentEntity): Long {
-        val id = investmentDao.insertInvestment(investment)
+        val isNew = investment.id == 0L
+        val id = if (isNew) {
+            investmentDao.insertInvestment(investment)
+        } else {
+            investmentDao.updateInvestment(investment)
+            investment.id
+        }
         auditLogDao.insert(
-            AuditLogEntity(entityType = "investment", entityId = id, action = "SAVE", newValue = investment.name)
+            AuditLogEntity(
+                entityType = "investment",
+                entityId = id,
+                action = if (isNew) "CREATE" else "UPDATE",
+                newValue = investment.name,
+            )
         )
         return id
     }

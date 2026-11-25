@@ -205,7 +205,7 @@ fun AddExpenseScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            state.errorMessage?.let {
+            (amountError ?: state.errorMessage)?.let {
                 Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall)
             }
 
@@ -216,7 +216,10 @@ fun AddExpenseScreen(
                         amountError = "Enter a valid positive amount"
                         return@Button
                     }
-                    val accountId = selectedAccountId ?: return@Button
+                    val accountId = selectedAccountId ?: run {
+                        amountError = "Please create or select an account first"
+                        return@Button
+                    }
                     viewModel.addExpense(
                         amountPaise = paise,
                         accountId = accountId,

@@ -70,16 +70,21 @@ class AccountRepositoryImpl @Inject constructor(
     override suspend fun saveAccount(account: AccountEntity): Long {
         val isNew = account.id == 0L
         val updated = account.copy(updatedAt = System.currentTimeMillis())
-        val id = accountDao.insert(updated)
+        val id = if (isNew) {
+            accountDao.insert(updated)
+        } else {
+            accountDao.update(updated)
+            account.id
+        }
         auditLogDao.insert(
             AuditLogEntity(
                 entityType = "account",
-                entityId = if (isNew) id else account.id,
+                entityId = id,
                 action = if (isNew) "CREATE" else "UPDATE",
                 newValue = account.name,
             )
         )
-        return if (isNew) id else account.id
+        return id
     }
 
     override suspend fun setArchived(id: Long, archived: Boolean) {

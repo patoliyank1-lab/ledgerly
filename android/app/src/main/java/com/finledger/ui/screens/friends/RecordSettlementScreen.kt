@@ -2,6 +2,8 @@ package com.finledger.ui.screens.friends
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,17 +48,33 @@ import com.finledger.ui.components.DatePickerField
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RecordSettlementScreen(
     initialPersonId: Long?,
+    initialGroupId: Long? = null,
+    initialEventId: Long? = null,
+    initialDirection: SettlementDirection? = null,
+    initialAmountPaise: Long? = null,
     onBack: () -> Unit,
     viewModel: FriendsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     var selectedPersonId by remember { mutableStateOf(initialPersonId?.takeIf { it > 0L }) }
-    var direction by remember { mutableStateOf(SettlementDirection.RECEIVED) }
-    var amountText by remember { mutableStateOf("") }
+    var selectedGroupId by remember { mutableStateOf(initialGroupId?.takeIf { it > 0L }) }
+    var selectedEventId by remember { mutableStateOf(initialEventId?.takeIf { it > 0L }) }
+    var direction by remember { mutableStateOf(initialDirection ?: SettlementDirection.RECEIVED) }
+    var amountText by remember {
+        mutableStateOf(
+            if (initialAmountPaise != null && initialAmountPaise > 0L) {
+                MoneyFormatter.paiseToInputString(initialAmountPaise)
+            } else ""
+        )
+    }
+    var userEditedAmountOrDirection by remember {
+        mutableStateOf(initialDirection != null || (initialAmountPaise != null && initialAmountPaise > 0L))
+    }
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }
     var dateMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var paymentMethod by remember { mutableStateOf("") }
@@ -75,6 +93,19 @@ fun RecordSettlementScreen(
     }
 
     val selectedPerson = state.balances.firstOrNull { it.person.id == selectedPersonId }
+
+    LaunchedEffect(selectedPerson?.person?.id, selectedPerson?.netBalancePaise) {
+        if (!userEditedAmountOrDirection && selectedPerson != null) {
+            val net = selectedPerson.netBalancePaise
+            if (net < 0L) {
+                direction = SettlementDirection.PAID
+                amountText = MoneyFormatter.paiseToInputString(-net)
+            } else if (net > 0L) {
+                direction = SettlementDirection.RECEIVED
+                amountText = MoneyFormatter.paiseToInputString(net)
+            }
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -122,6 +153,7 @@ fun RecordSettlementScreen(
                             text = { Text(b.person.name) },
                             onClick = {
                                 selectedPersonId = b.person.id
+                                userEditedAmountOrDirection = false
                                 personExpanded = false
                             },
                         )
@@ -132,13 +164,19 @@ fun RecordSettlementScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 FilterChip(
                     selected = direction == SettlementDirection.RECEIVED,
-                    onClick = { direction = SettlementDirection.RECEIVED },
+                    onClick = {
+                        direction = SettlementDirection.RECEIVED
+                        userEditedAmountOrDirection = true
+                    },
                     label = { Text("They Paid You") },
                     modifier = Modifier.weight(1f),
                 )
                 FilterChip(
                     selected = direction == SettlementDirection.PAID,
-                    onClick = { direction = SettlementDirection.PAID },
+                    onClick = {
+                        direction = SettlementDirection.PAID
+                        userEditedAmountOrDirection = true
+                    },
                     label = { Text("You Paid Them") },
                     modifier = Modifier.weight(1f),
                 )
@@ -146,7 +184,11 @@ fun RecordSettlementScreen(
 
             AmountTextField(
                 value = amountText,
-                onValueChange = { amountText = it; errorText = null },
+                onValueChange = {
+                    amountText = it
+                    userEditedAmountOrDirection = true
+                    errorText = null
+                },
                 label = "Settlement Amount",
                 currency = state.primaryCurrency,
             )
@@ -158,8 +200,60 @@ fun RecordSettlementScreen(
                 label = "Payment Account",
             )
 
+            if (state.groups.isNotEmpty()) {
+                Text("Group (Optional)", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    FilterChip(
+                        selected = selectedGroupId == null,
+                        onClick = { selectedGroupId = null },
+                        label = { Text("None") },
+                    )
+                    state.groups.forEach { g ->
+                        FilterChip(
+                            selected = selectedGroupId == g.id,
+                            onClick = { selectedGroupId = g.id },
+                            label = { Text(g.name) },
+                        )
+                    }
+                }
+            }
+
+            val scopedEvents = if (selectedGroupId != null) {
+                state.events.filter { it.groupId == selectedGroupId }
+            } else state.events
+            if (scopedEvents.isNotEmpty()) {
+                Text("Event (Optional)", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    FilterChip(
+                        selected = selectedEventId == null,
+                        onClick = { selectedEventId = null },
+                        label = { Text("None") },
+                    )
+                    scopedEvents.forEach { ev ->
+                        FilterChip(
+                            selected = selectedEventId == ev.id,
+                            onClick = {
+                                selectedEventId = ev.id
+                                if (ev.groupId != null) selectedGroupId = ev.groupId
+                            },
+                            label = { Text(ev.name) },
+                        )
+                    }
+                }
+            }
+
             DatePickerField(dateMs = dateMs, onDateSelected = { dateMs = it })
 
+            Text("Payment Method", style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                listOf("UPI", "Cash", "Bank Transfer", "Card").forEach { method ->
+                    FilterChip(
+                        selected = paymentMethod.equals(method, ignoreCase = true),
+                        onClick = { paymentMethod = method },
+                        label = { Text(method) },
+                    )
+                }
+            }
             OutlinedTextField(
                 value = paymentMethod,
                 onValueChange = { paymentMethod = it },
@@ -208,6 +302,8 @@ fun RecordSettlementScreen(
                         paymentMethod = paymentMethod,
                         referenceNumber = reference,
                         notes = notes,
+                        groupId = selectedGroupId,
+                        eventId = selectedEventId,
                         onSuccess = onBack,
                     )
                 },

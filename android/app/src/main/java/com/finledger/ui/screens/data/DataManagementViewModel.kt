@@ -3,6 +3,7 @@ package com.finledger.ui.screens.data
 import android.content.Context
 import android.net.Uri
 import android.os.StatFs
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.finledger.data.local.dao.BackupHistoryDao
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -203,23 +205,56 @@ class DataManagementViewModel @Inject constructor(
         }
     }
 
-    fun loadCsvFromUri(uri: Uri, fileName: String, onLoaded: () -> Unit) {
+    fun loadCsvFromUri(uri: Uri, fileName: String? = null, onLoaded: () -> Unit) {
         viewModelScope.launch {
+            val resolvedName = fileName ?: resolveDisplayName(uri)
             runCatching {
                 context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                     ?: error("Cannot read CSV file")
             }.onSuccess { raw ->
                 val table = CsvParser.parse(raw)
-                _csvState.value = fileName to table
+                if (table.headers.isEmpty()) {
+                    _status.value = "CSV file has no headers or rows"
+                    return@onSuccess
+                }
+                val lowerHeaders = table.headers.map { it.lowercase() }
+                val dateIdx = lowerHeaders.indexOfFirst { it.contains("date") }.takeIf { it >= 0 } ?: 0
+                val amountIdx = lowerHeaders.indexOfFirst { it.contains("amount") || it.contains("value") }.takeIf { it >= 0 }
+                    ?: 1.coerceAtMost((table.headers.size - 1).coerceAtLeast(0))
+                val typeIdx = lowerHeaders.indexOfFirst { it.contains("type") || it.contains("dr/cr") || it.contains("credit") }.takeIf { it >= 0 }
+                val merchantIdx = lowerHeaders.indexOfFirst { it.contains("merchant") || it.contains("payee") || it.contains("party") }.takeIf { it >= 0 }
+                    ?: if (table.headers.size > 2) 2 else null
+                val descIdx = lowerHeaders.indexOfFirst { it.contains("desc") || it.contains("narration") || it.contains("particular") }.takeIf { it >= 0 }
+                    ?: if (table.headers.size > 3) 3 else null
+                val notesIdx = lowerHeaders.indexOfFirst { it.contains("note") || it.contains("remark") }.takeIf { it >= 0 }
+
+                _csvState.value = resolvedName to table
+                _analyzed.value = emptyList()
+                _importResult.value = null
                 _mapping.value = ColumnMapping(
-                    dateIndex = 0,
-                    amountIndex = 1.coerceAtMost((table.headers.size - 1).coerceAtLeast(0)),
-                    merchantIndex = if (table.headers.size > 2) 2 else null,
-                    descriptionIndex = if (table.headers.size > 3) 3 else null,
+                    dateIndex = dateIdx,
+                    amountIndex = amountIdx,
+                    typeIndex = typeIdx,
+                    merchantIndex = merchantIdx,
+                    descriptionIndex = descIdx,
+                    notesIndex = notesIdx,
                 )
                 onLoaded()
             }.onFailure { _status.value = "CSV parse error: ${it.message}" }
         }
+    }
+
+    private fun resolveDisplayName(uri: Uri): String {
+        return runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) cursor.getString(idx)?.takeIf { it.isNotBlank() } else null
+                } else {
+                    null
+                }
+            }
+        }.getOrNull() ?: "transactions_import.csv"
     }
 
     fun updateMappingAndAnalyze(mapping: ColumnMapping, targetAccountId: Long, currency: String, onReady: () -> Unit) {
@@ -263,9 +298,12 @@ class DataManagementViewModel @Inject constructor(
         viewModelScope.launch { saveDocumentUseCase.softDelete(id) }
     }
 
-    fun observeDocument(id: Long): StateFlow<DocumentEntity?> =
+    private val documentFlows = ConcurrentHashMap<Long, StateFlow<DocumentEntity?>>()
+
+    fun observeDocument(id: Long): StateFlow<DocumentEntity?> = documentFlows.getOrPut(id) {
         saveDocumentUseCase.observeById(id)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    }
 
     fun restoreTransaction(id: Long) {
         viewModelScope.launch { transactionRepository.restore(id) }

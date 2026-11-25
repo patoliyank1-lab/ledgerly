@@ -4,8 +4,9 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 object MoneyFormatter {
@@ -57,7 +58,17 @@ object MoneyFormatter {
     }
 
     fun parseToPaise(input: String): Long? {
-        val cleaned = input.trim().replace(",", "").replace("₹", "").replace("$", "")
+        val cleaned = input.trim()
+            .replace(",", "")
+            .replace(" ", "")
+            .replace("S$", "")
+            .replace("AED", "", ignoreCase = true)
+            .replace("INR", "", ignoreCase = true)
+            .replace("USD", "", ignoreCase = true)
+            .replace("EUR", "", ignoreCase = true)
+            .replace("GBP", "", ignoreCase = true)
+            .replace("SGD", "", ignoreCase = true)
+            .replace(Regex("[₹$€£¥]"), "")
         if (cleaned.isEmpty()) return null
         return try {
             BigDecimal(cleaned)
@@ -87,14 +98,17 @@ object MoneyFormatter {
 }
 
 object DateFormatter {
-    private val dayMonthYear = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-    private val headerDate = SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault())
-    private val monthYear = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
-    private val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
+    private val dayMonthYear: DateTimeFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.getDefault())
+    private val headerDate: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy", Locale.getDefault())
+    private val monthYear: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
+    private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault())
 
-    fun formatDate(epochMs: Long): String = dayMonthYear.format(Date(epochMs))
-    fun formatDateHeader(epochMs: Long): String = headerDate.format(Date(epochMs))
-    fun formatMonthYear(epochMs: Long): String = monthYear.format(Date(epochMs))
-    fun formatTime(epochMs: Long): String = timeFormat.format(Date(epochMs))
+    private fun toZonedDateTime(epochMs: Long) =
+        Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault())
+
+    fun formatDate(epochMs: Long): String = dayMonthYear.format(toZonedDateTime(epochMs))
+    fun formatDateHeader(epochMs: Long): String = headerDate.format(toZonedDateTime(epochMs))
+    fun formatMonthYear(epochMs: Long): String = monthYear.format(toZonedDateTime(epochMs))
+    fun formatTime(epochMs: Long): String = timeFormat.format(toZonedDateTime(epochMs))
 }
 

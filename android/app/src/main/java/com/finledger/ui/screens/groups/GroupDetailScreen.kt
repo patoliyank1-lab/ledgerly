@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -42,6 +44,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.finledger.data.local.entity.SettlementDirection
+import com.finledger.data.local.entity.SharedExpenseEntity
+import com.finledger.domain.usecase.SplitCalculator
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.theme.FinLedgerTheme
@@ -54,11 +59,13 @@ fun GroupDetailScreen(
     onEditGroup: (Long) -> Unit,
     onAddEvent: (Long) -> Unit,
     onOpenEvent: (Long) -> Unit,
-    onAddSharedExpense: (Long) -> Unit,
+    onAddSharedExpense: (groupId: Long, eventId: Long?) -> Unit,
+    onSettleSuggestion: (personId: Long, direction: SettlementDirection, amountPaise: Long, groupId: Long) -> Unit = { _, _, _, _ -> },
     viewModel: GroupsViewModel = hiltViewModel(),
 ) {
     val detail by viewModel.observeGroupDetail(groupId).collectAsStateWithLifecycle()
     var tabIndex by remember { mutableIntStateOf(0) }
+    var inspectingExpense by remember { mutableStateOf<SharedExpenseEntity?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -80,7 +87,7 @@ fun GroupDetailScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { onAddSharedExpense(groupId) },
+                onClick = { onAddSharedExpense(groupId, null) },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ) {
@@ -108,7 +115,7 @@ fun GroupDetailScreen(
                     Spacer(modifier = Modifier.height(Spacing.sm))
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         Button(
-                            onClick = { onAddSharedExpense(groupId) },
+                            onClick = { onAddSharedExpense(groupId, null) },
                             shape = MaterialTheme.shapes.extraLarge,
                         ) { Text("Add Expense") }
                         OutlinedButton(
@@ -139,6 +146,9 @@ fun GroupDetailScreen(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { inspectingExpense = exp },
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -169,6 +179,9 @@ fun GroupDetailScreen(
                     GroupMemberBalancesTab(
                         detail = detail,
                         personName = { id -> viewModel.personName(id, detail.members) },
+                        onSettleSuggestion = { personId, dir, amt ->
+                            onSettleSuggestion(personId, dir, amt, groupId)
+                        },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -189,13 +202,24 @@ fun GroupDetailScreen(
                                     .fillMaxWidth()
                                     .clickable { onOpenEvent(ev.id) },
                             ) {
-                                Column(modifier = Modifier.padding(Spacing.md)) {
-                                    Text(ev.name, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        text = "${DateFormatter.formatDate(ev.startDate)} · ${ev.status.name}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = FinLedgerTheme.colors.inkMuted48,
-                                    )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(Spacing.md),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(ev.name, style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            text = "${DateFormatter.formatDate(ev.startDate)} · ${ev.status.name}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = FinLedgerTheme.colors.inkMuted48,
+                                        )
+                                    }
+                                    TextButton(onClick = { onAddSharedExpense(groupId, ev.id) }) {
+                                        Text("+ Expense")
+                                    }
                                 }
                             }
                         }
@@ -204,12 +228,59 @@ fun GroupDetailScreen(
             }
         }
     }
+
+    inspectingExpense?.let { exp ->
+        val payers = detail.payersByExpense[exp.id].orEmpty()
+        val splits = detail.splitsByExpense[exp.id].orEmpty().filter { !it.isExcluded }
+        AlertDialog(
+            onDismissRequest = { inspectingExpense = null },
+            title = { Text(exp.description) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(
+                        text = "${DateFormatter.formatDate(exp.date)} · ${MoneyFormatter.format(exp.totalAmount, exp.currency)} · ${exp.splitMethod.displayName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (payers.isNotEmpty()) {
+                        Text("Paid by:", style = MaterialTheme.typography.titleSmall)
+                        payers.forEach { p ->
+                            Text(
+                                text = "• ${viewModel.personName(p.personId, detail.members)}: ${MoneyFormatter.format(p.amountPaid, exp.currency)}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    if (splits.isNotEmpty()) {
+                        Text("Split:", style = MaterialTheme.typography.titleSmall)
+                        splits.forEach { s ->
+                            Text(
+                                text = "• ${viewModel.personName(s.personId, detail.members)}: ${MoneyFormatter.format(s.shareAmount, exp.currency)}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteSharedExpense(exp.id)
+                        inspectingExpense = null
+                    },
+                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { inspectingExpense = null }) { Text("Close") }
+            },
+        )
+    }
 }
 
 @Composable
 fun GroupMemberBalancesTab(
     detail: GroupDetailUiState,
     personName: (Long) -> String,
+    onSettleSuggestion: (personId: Long, direction: SettlementDirection, amountPaise: Long) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -265,22 +336,47 @@ fun GroupMemberBalancesTab(
                 )
             }
             items(detail.suggestions) { s ->
+                val involvesUser = s.fromPersonId == SplitCalculator.USER_PERSON_ID ||
+                    s.toPersonId == SplitCalculator.USER_PERSON_ID
                 Card(
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = if (involvesUser) {
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) {
+                                    onSettleSuggestion(s.toPersonId, SettlementDirection.PAID, s.amountPaise)
+                                } else {
+                                    onSettleSuggestion(s.fromPersonId, SettlementDirection.RECEIVED, s.amountPaise)
+                                }
+                            }
+                    } else {
+                        Modifier.fillMaxWidth()
+                    },
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(Spacing.md),
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "${personName(s.fromPersonId)} → ${personName(s.toPersonId)}",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${personName(s.fromPersonId)} → ${personName(s.toPersonId)}",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            if (involvesUser) {
+                                Text(
+                                    text = "Tap to record settlement",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                         Text(
                             text = MoneyFormatter.format(s.amountPaise, detail.primaryCurrency),
                             style = MaterialTheme.typography.bodyLarge,

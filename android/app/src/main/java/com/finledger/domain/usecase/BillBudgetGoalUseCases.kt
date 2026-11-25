@@ -2,7 +2,9 @@ package com.finledger.domain.usecase
 
 import com.finledger.data.local.entity.*
 import com.finledger.data.repository.CommitmentRepository
+import com.finledger.data.repository.SocialRepository
 import com.finledger.data.repository.TransactionRepository
+import com.finledger.data.repository.UserPreferencesRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.util.Calendar
@@ -64,21 +66,37 @@ class MarkBillPaidUseCase @Inject constructor(
                     transactionId = txId,
                 )
             )
-            // Advance next due date according to frequency
-            val nextDue = advanceDueDate(bill.nextDueDateMs, bill.frequency)
+            // Advance next due date anchored to original dueDay (prevents month-end drift after Feb)
+            val nextDue = advanceDueDate(bill.nextDueDateMs, bill.frequency, bill.dueDay)
             commitmentRepository.saveBill(bill.copy(nextDueDateMs = nextDue))
             paymentId
         }
     }
 
-    private fun advanceDueDate(currentMs: Long, frequency: BillFrequency): Long {
+    private fun advanceDueDate(currentMs: Long, frequency: BillFrequency, dueDay: Int): Long {
         val cal = Calendar.getInstance().apply { timeInMillis = currentMs }
         when (frequency) {
             BillFrequency.WEEKLY -> cal.add(Calendar.WEEK_OF_YEAR, 1)
-            BillFrequency.MONTHLY -> cal.add(Calendar.MONTH, 1)
-            BillFrequency.QUARTERLY -> cal.add(Calendar.MONTH, 3)
-            BillFrequency.YEARLY -> cal.add(Calendar.YEAR, 1)
-            BillFrequency.CUSTOM -> cal.add(Calendar.MONTH, 1)
+            BillFrequency.MONTHLY -> {
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.add(Calendar.MONTH, 1)
+                cal.set(Calendar.DAY_OF_MONTH, dueDay.coerceIn(1, cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
+            }
+            BillFrequency.QUARTERLY -> {
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.add(Calendar.MONTH, 3)
+                cal.set(Calendar.DAY_OF_MONTH, dueDay.coerceIn(1, cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
+            }
+            BillFrequency.YEARLY -> {
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.add(Calendar.YEAR, 1)
+                cal.set(Calendar.DAY_OF_MONTH, dueDay.coerceIn(1, cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
+            }
+            BillFrequency.CUSTOM -> {
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.add(Calendar.MONTH, 1)
+                cal.set(Calendar.DAY_OF_MONTH, dueDay.coerceIn(1, cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
+            }
         }
         return cal.timeInMillis
     }
@@ -97,14 +115,24 @@ class CreateBudgetUseCase @Inject constructor(
 class GetBudgetProgressUseCase @Inject constructor(
     private val commitmentRepository: CommitmentRepository,
     private val transactionRepository: TransactionRepository,
+    private val socialRepository: SocialRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) {
     operator fun invoke(): Flow<List<BudgetProgress>> {
         return combine(
             commitmentRepository.observeActiveBudgets(),
             transactionRepository.observeAllTransactionsWithDetails(),
-        ) { budgets, transactions ->
-            budgets.map { budget ->
-                val (startMs, endMs) = periodBounds(budget)
+            socialRepository.observeAllSharedExpenses(),
+            socialRepository.observeAllSplits(),
+            userPreferencesRepository.preferences,
+        ) { budgets, transactions, sharedExpenses, splits, prefs ->
+            val friendPaidShares = FriendPaidSharedExpenseHelper.resolveFriendPaidShares(
+                transactions,
+                sharedExpenses,
+                splits,
+            )
+
+            fun computeSpent(budget: BudgetEntity, startMs: Long, endMs: Long): Long {
                 var spent = 0L
                 for (item in transactions) {
                     val tx = item.transaction
@@ -118,40 +146,88 @@ class GetBudgetProgressUseCase @Inject constructor(
                     if (tx.type == TransactionType.EXPENSE) spent += tx.personalAmount
                     if (tx.type == TransactionType.REFUND) spent -= tx.personalAmount
                 }
-                val normSpent = spent.coerceAtLeast(0L)
-                val remaining = budget.amount - normSpent
-                val pct = if (budget.amount > 0) ((normSpent * 100) / budget.amount).toInt() else 0
+                if (budget.accountId == null) {
+                    for (entry in friendPaidShares) {
+                        val exp = entry.expense
+                        if (exp.date !in startMs..endMs) continue
+                        if (budget.categoryId != null && exp.categoryId != budget.categoryId) continue
+                        if (budget.groupId != null && exp.groupId != budget.groupId) continue
+                        if (budget.eventId != null && exp.eventId != budget.eventId) continue
+                        spent += entry.userSharePaise
+                    }
+                }
+                return spent.coerceAtLeast(0L)
+            }
+
+            budgets.map { budget ->
+                val (startMs, endMs) = periodBounds(budget, prefs.financialYearStartMonth)
+                val normSpent = computeSpent(budget, startMs, endMs)
+                val carryOver = if (budget.isRollover) {
+                    previousPeriodBounds(budget, prefs.financialYearStartMonth)?.let { (prevS, prevE) ->
+                        (budget.amount - computeSpent(budget, prevS, prevE)).coerceAtLeast(0L)
+                    } ?: 0L
+                } else 0L
+                val effectiveLimit = (budget.amount + carryOver).coerceAtLeast(1L)
+                val remaining = effectiveLimit - normSpent
+                val pct = ((normSpent * 100) / effectiveLimit).toInt()
                 BudgetProgress(
-                    budget = budget,
+                    budget = budget.copy(amount = effectiveLimit),
                     spentPaise = normSpent,
                     remainingPaise = remaining,
                     percentUsed = pct,
                     isAlertTriggered = pct >= budget.alertThreshold,
-                    isExceeded = normSpent > budget.amount,
+                    isExceeded = normSpent > effectiveLimit,
                 )
             }
         }
     }
 
-    private fun periodBounds(budget: BudgetEntity): Pair<Long, Long> {
-        val cal = Calendar.getInstance()
+    private fun periodBounds(budget: BudgetEntity, fyStartMonth: Int): Pair<Long, Long> {
         return when (budget.period) {
             BudgetPeriod.MONTHLY -> GetMonthlySummaryUseCase.monthBounds()
-            BudgetPeriod.YEARLY -> {
-                cal.set(Calendar.DAY_OF_YEAR, 1)
-                cal.set(Calendar.HOUR_OF_DAY, 0)
-                cal.set(Calendar.MINUTE, 0)
-                cal.set(Calendar.SECOND, 0)
-                cal.set(Calendar.MILLISECOND, 0)
-                val s = cal.timeInMillis
-                cal.set(Calendar.DAY_OF_YEAR, cal.getActualMaximum(Calendar.DAY_OF_YEAR))
-                cal.set(Calendar.HOUR_OF_DAY, 23)
-                cal.set(Calendar.MINUTE, 59)
-                cal.set(Calendar.SECOND, 59)
-                s to cal.timeInMillis
-            }
+            BudgetPeriod.YEARLY -> financialYearBounds(fyStartMonth, yearOffset = 0)
             BudgetPeriod.CUSTOM -> budget.startDate to (budget.endDate ?: Long.MAX_VALUE)
         }
+    }
+
+    private fun previousPeriodBounds(budget: BudgetEntity, fyStartMonth: Int): Pair<Long, Long>? {
+        return when (budget.period) {
+            BudgetPeriod.MONTHLY -> {
+                val cal = Calendar.getInstance().apply {
+                    set(Calendar.DAY_OF_MONTH, 1)
+                    add(Calendar.MONTH, -1)
+                }
+                GetMonthlySummaryUseCase.monthBounds(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH))
+            }
+            BudgetPeriod.YEARLY -> financialYearBounds(fyStartMonth, yearOffset = -1)
+            BudgetPeriod.CUSTOM -> null
+        }
+    }
+
+    private fun financialYearBounds(fyStartMonthOneBased: Int, yearOffset: Int): Pair<Long, Long> {
+        val startMonthZero = (fyStartMonthOneBased.coerceIn(1, 12)) - 1
+        val now = Calendar.getInstance()
+        val currentMonthZero = now.get(Calendar.MONTH)
+        val fyStartYear = (if (currentMonthZero >= startMonthZero) now.get(Calendar.YEAR) else now.get(Calendar.YEAR) - 1) + yearOffset
+
+        val startCal = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.YEAR, fyStartYear)
+            set(Calendar.MONTH, startMonthZero)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val endCal = (startCal.clone() as Calendar).apply {
+            add(Calendar.MONTH, 11)
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+        return startCal.timeInMillis to endCal.timeInMillis
     }
 }
 

@@ -28,6 +28,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -116,13 +117,18 @@ class TransactionsViewModel @Inject constructor(
         _filter.value = TransactionFilter()
     }
 
-    fun observeTransaction(id: Long): StateFlow<TransactionEntity?> =
+    private val txFlows = ConcurrentHashMap<Long, StateFlow<TransactionEntity?>>()
+    private val auditFlows = ConcurrentHashMap<Long, StateFlow<List<AuditLogEntity>>>()
+
+    fun observeTransaction(id: Long): StateFlow<TransactionEntity?> = txFlows.getOrPut(id) {
         transactionRepository.observeById(id)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    }
 
-    fun observeAuditHistory(id: Long): StateFlow<List<AuditLogEntity>> =
+    fun observeAuditHistory(id: Long): StateFlow<List<AuditLogEntity>> = auditFlows.getOrPut(id) {
         auditLogRepository.observeForEntity("transaction", id)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
 
     fun addExpense(
         amountPaise: Long,

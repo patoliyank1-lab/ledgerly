@@ -3,6 +3,7 @@ package com.finledger.data.repository
 import com.finledger.data.local.dao.AccountDao
 import com.finledger.data.local.dao.AuditLogDao
 import com.finledger.data.local.dao.CategoryDao
+import com.finledger.data.local.dao.SettlementDao
 import com.finledger.data.local.dao.TagDao
 import com.finledger.data.local.dao.TransactionDao
 import com.finledger.data.local.entity.AuditLogEntity
@@ -56,6 +57,7 @@ class TransactionRepositoryImpl @Inject constructor(
     private val accountDao: AccountDao,
     private val categoryDao: CategoryDao,
     private val tagDao: TagDao,
+    private val settlementDao: SettlementDao,
     private val auditLogDao: AuditLogDao,
 ) : TransactionRepository {
 
@@ -143,6 +145,7 @@ class TransactionRepositoryImpl @Inject constructor(
 
     override suspend fun softDelete(id: Long) {
         transactionDao.setDeleted(id, true)
+        settlementDao.softDeleteByLinkedTransactionId(id)
         auditLogDao.insert(
             AuditLogEntity(entityType = "transaction", entityId = id, action = "DELETE")
         )

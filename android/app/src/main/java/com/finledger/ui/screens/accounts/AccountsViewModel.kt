@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 data class AccountsUiState(
@@ -55,13 +56,18 @@ class AccountsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AccountsUiState())
 
-    fun observeAccount(accountId: Long): StateFlow<AccountWithBalance?> =
+    private val accountFlows = ConcurrentHashMap<Long, StateFlow<AccountWithBalance?>>()
+    private val accountTxFlows = ConcurrentHashMap<Long, StateFlow<List<TransactionWithDetails>>>()
+
+    fun observeAccount(accountId: Long): StateFlow<AccountWithBalance?> = accountFlows.getOrPut(accountId) {
         accountRepository.observeAccountWithBalance(accountId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    }
 
-    fun observeTransactionsForAccount(accountId: Long): StateFlow<List<TransactionWithDetails>> =
+    fun observeTransactionsForAccount(accountId: Long): StateFlow<List<TransactionWithDetails>> = accountTxFlows.getOrPut(accountId) {
         transactionRepository.observeTransactionsByAccount(accountId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
 
     fun saveAccount(
         existing: AccountEntity? = null,
@@ -90,12 +96,12 @@ class AccountsViewModel @Inject constructor(
                 dueDay = if (type == AccountType.CREDIT_CARD) dueDay else null,
                 notes = notes.trim(),
             )
-            addAccountUseCase(entity)
+            runCatching { addAccountUseCase(entity).getOrThrow() }
                 .onSuccess {
                     _error.value = null
                     onSaved()
                 }
-                .onFailure { _error.value = it.message }
+                .onFailure { _error.value = it.message ?: "Failed to save account" }
         }
     }
 

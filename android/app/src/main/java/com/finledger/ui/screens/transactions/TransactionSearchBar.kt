@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import com.finledger.ui.theme.FinLedgerTheme
+import com.finledger.ui.theme.PillShape
 import com.finledger.ui.theme.Spacing
 
 /**
@@ -33,7 +34,7 @@ fun TransactionSearchBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = PillShape,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = modifier

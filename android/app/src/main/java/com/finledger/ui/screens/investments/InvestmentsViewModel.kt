@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 data class InvestmentsUiState(
@@ -53,9 +54,12 @@ class InvestmentsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InvestmentsUiState())
 
-    fun observeTrades(investmentId: Long): StateFlow<List<InvestmentTransactionEntity>> =
+    private val tradeFlows = ConcurrentHashMap<Long, StateFlow<List<InvestmentTransactionEntity>>>()
+
+    fun observeTrades(investmentId: Long): StateFlow<List<InvestmentTransactionEntity>> = tradeFlows.getOrPut(investmentId) {
         insightRepository.observeInvestmentTransactions(investmentId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
 
     fun createInvestment(
         name: String,
@@ -94,8 +98,11 @@ class InvestmentsViewModel @Inject constructor(
         tradeType: InvestmentTransactionType,
         units: Double,
         pricePerUnitPaise: Long,
+        feesPaise: Long = 0L,
+        taxesPaise: Long = 0L,
         accountId: Long?,
         notes: String,
+        onSuccess: () -> Unit = {},
     ) {
         viewModelScope.launch {
             addInvestmentUseCase.recordTrade(
@@ -103,17 +110,38 @@ class InvestmentsViewModel @Inject constructor(
                 tradeType = tradeType,
                 units = units,
                 pricePerUnitPaise = pricePerUnitPaise,
+                feesPaise = feesPaise,
+                taxesPaise = taxesPaise,
                 dateMs = System.currentTimeMillis(),
                 accountId = accountId,
                 notes = notes,
-            ).onFailure { _error.value = it.message }
+            ).onSuccess {
+                _error.value = null
+                onSuccess()
+            }.onFailure { _error.value = it.message }
         }
     }
 
-    fun updateValuation(investmentId: Long, newPricePerUnitPaise: Long) {
+    fun updateValuation(investmentId: Long, newPricePerUnitPaise: Long, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
             addInvestmentUseCase.updateManualValuation(investmentId, newPricePerUnitPaise)
+                .onSuccess {
+                    _error.value = null
+                    onSuccess()
+                }
+                .onFailure { _error.value = it.message }
         }
+    }
+
+    fun deleteInvestment(investmentId: Long, onDone: () -> Unit) {
+        viewModelScope.launch {
+            insightRepository.deleteInvestment(investmentId)
+            onDone()
+        }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }
 

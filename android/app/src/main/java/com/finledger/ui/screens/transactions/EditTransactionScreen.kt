@@ -131,7 +131,11 @@ fun EditTransactionScreen(
                     onSelectAccount = { selectedToAccountId = it.account.id },
                     label = "To Account",
                 )
-            } else {
+            } else if (
+                current.type == TransactionType.EXPENSE ||
+                current.type == TransactionType.REFUND ||
+                current.type == TransactionType.INCOME
+            ) {
                 val cats = if (current.type == TransactionType.INCOME) state.incomeCategories else state.expenseCategories
                 CategoryPickerGrid(
                     categories = cats,

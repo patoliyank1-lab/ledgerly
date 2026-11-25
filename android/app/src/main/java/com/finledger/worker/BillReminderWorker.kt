@@ -22,7 +22,7 @@ class BillReminderWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val prefs = userPreferencesRepository.preferences.first()
-        if (!prefs.notificationsEnabled) return Result.success()
+        if (!prefs.notificationsEnabled || !prefs.billRemindersEnabled) return Result.success()
 
         val now = System.currentTimeMillis()
         val bills = billDao.getAllOnce().filter { it.isActive }

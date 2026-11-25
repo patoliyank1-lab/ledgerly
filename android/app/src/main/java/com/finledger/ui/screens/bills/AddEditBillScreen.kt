@@ -53,6 +53,9 @@ fun AddEditBillScreen(
     viewModel: BillsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val existing = remember(billId, state.bills) {
+        billId?.let { id -> state.bills.firstOrNull { it.id == id } }
+    }
 
     var name by remember { mutableStateOf("") }
     var provider by remember { mutableStateOf("") }
@@ -64,6 +67,22 @@ fun AddEditBillScreen(
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
     var notes by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var populatedId by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(existing) {
+        if (existing != null && populatedId != existing.id) {
+            name = existing.name
+            provider = existing.provider
+            type = existing.type
+            frequency = existing.frequency
+            amountText = MoneyFormatter.paiseToInputString(existing.expectedAmount)
+            dueDateMs = existing.nextDueDateMs
+            selectedAccountId = existing.paymentAccountId
+            selectedCategoryId = existing.categoryId
+            notes = existing.notes
+            populatedId = existing.id
+        }
+    }
 
     LaunchedEffect(state.accounts, state.categories) {
         if (selectedAccountId == null && state.accounts.isNotEmpty()) {
@@ -78,7 +97,7 @@ fun AddEditBillScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Add Bill / Subscription", style = MaterialTheme.typography.headlineMedium) },
+                title = { Text(if (existing != null) "Edit Bill" else "Add Bill / Subscription", style = MaterialTheme.typography.headlineMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -169,7 +188,7 @@ fun AddEditBillScreen(
                         return@Button
                     }
                     viewModel.saveBill(
-                        existing = null,
+                        existing = existing,
                         name = name,
                         provider = provider,
                         type = type,

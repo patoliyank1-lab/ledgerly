@@ -22,6 +22,9 @@ interface LoanDao {
     @Query("SELECT * FROM loans WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<LoanEntity>
 
+    @Query("SELECT * FROM loans")
+    suspend fun getAllRawOnce(): List<LoanEntity>
+
     @Query("SELECT * FROM loan_repayments WHERE isDeleted = 0 ORDER BY date DESC")
     fun observeAllRepayments(): Flow<List<LoanRepaymentEntity>>
 
@@ -33,6 +36,9 @@ interface LoanDao {
 
     @Query("SELECT * FROM loan_repayments WHERE isDeleted = 0")
     suspend fun getAllRepaymentsOnce(): List<LoanRepaymentEntity>
+
+    @Query("SELECT * FROM loan_repayments")
+    suspend fun getAllRepaymentsRawOnce(): List<LoanRepaymentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLoan(loan: LoanEntity): Long
@@ -64,6 +70,9 @@ interface BillDao {
     @Query("SELECT * FROM bills WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<BillEntity>
 
+    @Query("SELECT * FROM bills")
+    suspend fun getAllRawOnce(): List<BillEntity>
+
     @Query("SELECT * FROM bills WHERE id = :id AND isDeleted = 0")
     suspend fun getById(id: Long): BillEntity?
 
@@ -72,6 +81,9 @@ interface BillDao {
 
     @Query("SELECT * FROM bill_payments WHERE isDeleted = 0")
     suspend fun getAllPaymentsOnce(): List<BillPaymentEntity>
+
+    @Query("SELECT * FROM bill_payments")
+    suspend fun getAllPaymentsRawOnce(): List<BillPaymentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBill(bill: BillEntity): Long
@@ -85,6 +97,9 @@ interface BillDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPayment(payment: BillPaymentEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPayments(payments: List<BillPaymentEntity>)
+
     @Query("UPDATE bills SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)
 }
@@ -96,6 +111,9 @@ interface BudgetDao {
 
     @Query("SELECT * FROM budgets WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<BudgetEntity>
+
+    @Query("SELECT * FROM budgets")
+    suspend fun getAllRawOnce(): List<BudgetEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(budget: BudgetEntity): Long
@@ -117,6 +135,9 @@ interface SavingsGoalDao {
 
     @Query("SELECT * FROM savings_goals WHERE isDeleted = 0")
     suspend fun getAllOnce(): List<SavingsGoalEntity>
+
+    @Query("SELECT * FROM savings_goals")
+    suspend fun getAllRawOnce(): List<SavingsGoalEntity>
 
     @Query("SELECT * FROM savings_goals WHERE id = :id")
     suspend fun getById(id: Long): SavingsGoalEntity?

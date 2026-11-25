@@ -18,8 +18,14 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :id AND isDeleted = 0")
     fun observeById(id: Long): Flow<DocumentEntity?>
 
+    @Query("SELECT * FROM documents")
+    suspend fun getAllRawOnce(): List<DocumentEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(doc: DocumentEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(docs: List<DocumentEntity>)
 
     @Query("UPDATE documents SET isDeleted = 1 WHERE id = :id")
     suspend fun softDelete(id: Long)

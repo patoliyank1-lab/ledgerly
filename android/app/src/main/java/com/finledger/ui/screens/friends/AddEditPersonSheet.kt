@@ -9,7 +9,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -44,6 +47,7 @@ fun AddEditPersonSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
@@ -63,6 +67,9 @@ fun AddEditPersonSheet(
                 onValueChange = { name = it; nameError = false },
                 label = { Text("Name") },
                 isError = nameError,
+                supportingText = if (nameError) {
+                    { Text("Name is required") }
+                } else null,
                 singleLine = true,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
@@ -71,6 +78,7 @@ fun AddEditPersonSheet(
                 value = phone,
                 onValueChange = { phone = it },
                 label = { Text("Phone (Optional)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 singleLine = true,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
@@ -79,6 +87,7 @@ fun AddEditPersonSheet(
                 value = email,
                 onValueChange = { email = it },
                 label = { Text("Email (Optional)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 singleLine = true,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),

@@ -1,6 +1,7 @@
 package com.finledger.domain.usecase
 
 import com.finledger.data.local.entity.*
+import com.finledger.data.repository.CategoryRepository
 import com.finledger.data.repository.InsightRepository
 import com.finledger.data.repository.SocialRepository
 import com.finledger.data.repository.TransactionRepository
@@ -115,9 +116,15 @@ class GetNetWorthUseCase @Inject constructor(
 
 class GetCashFlowUseCase @Inject constructor(
     private val transactionRepository: TransactionRepository,
+    private val socialRepository: SocialRepository,
 ) {
     operator fun invoke(monthsBack: Int = 6): Flow<List<MonthlyCashFlowPoint>> {
-        return transactionRepository.observeAllTransactionsWithDetails().map { list ->
+        return combine(
+            transactionRepository.observeAllTransactionsWithDetails(),
+            socialRepository.observeAllSharedExpenses(),
+            socialRepository.observeAllSplits(),
+        ) { list, sharedExpenses, splits ->
+            val friendPaidShares = FriendPaidSharedExpenseHelper.resolveFriendPaidShares(list, sharedExpenses, splits)
             val cal = Calendar.getInstance()
             val points = mutableListOf<MonthlyCashFlowPoint>()
             for (offset in (monthsBack - 1) downTo 0) {
@@ -138,6 +145,11 @@ class GetCashFlowUseCase @Inject constructor(
                         else -> Unit
                     }
                 }
+                for (entry in friendPaidShares) {
+                    if (entry.expense.date in start..end) {
+                        exp += entry.userSharePaise
+                    }
+                }
                 val normExp = exp.coerceAtLeast(0L)
                 points.add(
                     MonthlyCashFlowPoint(
@@ -155,32 +167,54 @@ class GetCashFlowUseCase @Inject constructor(
 
 class GetCategoryBreakdownUseCase @Inject constructor(
     private val transactionRepository: TransactionRepository,
+    private val socialRepository: SocialRepository,
+    private val categoryRepository: CategoryRepository,
 ) {
     operator fun invoke(startMs: Long, endMs: Long): Flow<List<CategorySpendingItem>> {
-        return transactionRepository.observeAllTransactionsWithDetails().map { list ->
+        return combine(
+            transactionRepository.observeAllTransactionsWithDetails(),
+            socialRepository.observeAllSharedExpenses(),
+            socialRepository.observeAllSplits(),
+            categoryRepository.observeAll(),
+        ) { list, sharedExpenses, splits, categories ->
+            val categoryMap = categories.associateBy { it.id }
             val filtered = list.filter {
                 val tx = it.transaction
                 !tx.isDeleted && tx.status != TransactionStatus.CANCELLED &&
                     tx.date in startMs..endMs &&
                     (tx.type == TransactionType.EXPENSE || tx.type == TransactionType.REFUND)
             }
+            val friendPaid = FriendPaidSharedExpenseHelper.resolveFriendPaidShares(list, sharedExpenses, splits)
+                .filter { it.expense.date in startMs..endMs }
 
-            val grouped = filtered.groupBy { it.category?.id }
-            val rawItems = grouped.map { (catId, txs) ->
-                val net = txs.sumOf {
-                    if (it.transaction.type == TransactionType.EXPENSE) it.transaction.personalAmount
-                    else -it.transaction.personalAmount
-                }.coerceAtLeast(0L)
-                val firstCat = txs.firstOrNull()?.category
+            val totalsByCat = mutableMapOf<Long?, Long>()
+            val countsByCat = mutableMapOf<Long?, Int>()
+            for (item in filtered) {
+                val catId = item.category?.id
+                val delta = if (item.transaction.type == TransactionType.EXPENSE) item.transaction.personalAmount
+                else -item.transaction.personalAmount
+                totalsByCat[catId] = (totalsByCat[catId] ?: 0L) + delta
+                countsByCat[catId] = (countsByCat[catId] ?: 0) + 1
+            }
+            for (entry in friendPaid) {
+                val catId = entry.expense.categoryId
+                totalsByCat[catId] = (totalsByCat[catId] ?: 0L) + entry.userSharePaise
+                countsByCat[catId] = (countsByCat[catId] ?: 0) + 1
+            }
+
+            val rawItems = totalsByCat.mapNotNull { (catId, rawTotal) ->
+                val net = rawTotal.coerceAtLeast(0L)
+                if (net <= 0L) return@mapNotNull null
+                val cat = catId?.let { categoryMap[it] }
                 CategorySpendingItem(
                     categoryId = catId,
-                    categoryName = firstCat?.name ?: "Uncategorized",
-                    colorHex = firstCat?.colorHex ?: "#7A7A7A",
+                    categoryName = cat?.name ?: "Uncategorized",
+                    colorHex = cat?.colorHex ?: "#7A7A7A",
                     totalPaise = net,
                     percent = 0.0,
-                    transactionCount = txs.size,
+                    transactionCount = countsByCat[catId] ?: 0,
                 )
-            }.filter { it.totalPaise > 0L }.sortedByDescending { it.totalPaise }
+            }.sortedByDescending { it.totalPaise }
 
             val totalAll = rawItems.sumOf { it.totalPaise }.coerceAtLeast(1L)
             rawItems.map { it.copy(percent = (it.totalPaise * 100.0) / totalAll) }
@@ -195,7 +229,8 @@ class GetCategoryBreakdownUseCase @Inject constructor(
         return transactionRepository.observeAllTransactionsWithDetails().map { list ->
             list.filter {
                 val tx = it.transaction
-                !tx.isDeleted && tx.date in startMs..endMs &&
+                !tx.isDeleted && tx.status != TransactionStatus.CANCELLED &&
+                    tx.date in startMs..endMs &&
                     tx.categoryId == categoryId &&
                     (tx.type == TransactionType.EXPENSE || tx.type == TransactionType.REFUND)
             }
@@ -205,9 +240,15 @@ class GetCategoryBreakdownUseCase @Inject constructor(
 
 class GetPeriodComparisonUseCase @Inject constructor(
     private val transactionRepository: TransactionRepository,
+    private val socialRepository: SocialRepository,
 ) {
     operator fun invoke(): Flow<PeriodComparison> {
-        return transactionRepository.observeAllTransactionsWithDetails().map { list ->
+        return combine(
+            transactionRepository.observeAllTransactionsWithDetails(),
+            socialRepository.observeAllSharedExpenses(),
+            socialRepository.observeAllSplits(),
+        ) { list, sharedExpenses, splits ->
+            val friendPaidShares = FriendPaidSharedExpenseHelper.resolveFriendPaidShares(list, sharedExpenses, splits)
             val cal = Calendar.getInstance()
             val (curStart, curEnd) = GetMonthlySummaryUseCase.monthBounds(
                 cal.get(Calendar.YEAR),
@@ -232,6 +273,11 @@ class GetPeriodComparisonUseCase @Inject constructor(
                         else -> Unit
                     }
                 }
+                for (entry in friendPaidShares) {
+                    if (entry.expense.date in s..e) {
+                        exp += entry.userSharePaise
+                    }
+                }
                 return inc to exp.coerceAtLeast(0L)
             }
 
@@ -250,17 +296,39 @@ class GetAgingReportUseCase @Inject constructor(
         return combine(
             computePersonBalanceUseCase(),
             socialRepository.observeAllSharedExpenses(),
+            socialRepository.observeAllPayers(),
             socialRepository.observeAllSplits(),
-        ) { balances, expenses, splits ->
+        ) { balances, expenses, payers, splits ->
             val now = System.currentTimeMillis()
-            val expMap = expenses.associateBy { it.id }
-            val splitsByPerson = splits.filter { !it.isExcluded }.groupBy { it.personId }
+            val payersByExp = payers.groupBy { it.sharedExpenseId }
+            val splitsByExp = splits.groupBy { it.sharedExpenseId }
+
+            // Build per-person positive receivable entries sorted oldest-first for FIFO aging
+            val receivablesByPerson = mutableMapOf<Long, MutableList<Pair<Long, Long>>>()
+            for (exp in expenses) {
+                if (exp.isDeleted) continue
+                val deltas = BalanceCalculator.bilateralDeltasForExpense(
+                    payersByExp[exp.id].orEmpty(),
+                    splitsByExp[exp.id].orEmpty(),
+                )
+                for ((personId, delta) in deltas) {
+                    if (delta > 0L) {
+                        receivablesByPerson.getOrPut(personId) { mutableListOf() }.add(exp.date to delta)
+                    }
+                }
+            }
 
             balances.filter { it.netBalancePaise > 0L }.map { b ->
-                val oldestDate = splitsByPerson[b.person.id].orEmpty()
-                    .mapNotNull { expMap[it.sharedExpenseId]?.date }
-                    .minOrNull() ?: now
-                val days = ((now - oldestDate) / 86_400_000L).toInt().coerceAtLeast(0)
+                val entries = receivablesByPerson[b.person.id].orEmpty().sortedBy { it.first }
+                // FIFO: match current outstanding against newest receivables backward (equivalent to paying oldest first)
+                var remainingToCover = b.netBalancePaise
+                var oldestUnpaidDate = now
+                for ((dateMs, amount) in entries.asReversed()) {
+                    oldestUnpaidDate = dateMs
+                    remainingToCover -= amount
+                    if (remainingToCover <= 0L) break
+                }
+                val days = ((now - oldestUnpaidDate) / 86_400_000L).toInt().coerceAtLeast(0)
                 val bucket = when {
                     days <= 30 -> "0–30 days"
                     days <= 60 -> "31–60 days"

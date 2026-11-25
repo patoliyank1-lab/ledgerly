@@ -211,21 +211,33 @@ fun SettingsScreen(
 
     if (showNameDialog) {
         var nameInput by remember { mutableStateOf(prefs.userName) }
+        var nameError by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showNameDialog = false },
             title = { Text("Profile Name") },
             text = {
                 OutlinedTextField(
                     value = nameInput,
-                    onValueChange = { nameInput = it },
+                    onValueChange = {
+                        nameInput = it
+                        nameError = false
+                    },
                     singleLine = true,
                     label = { Text("Your Name") },
+                    isError = nameError,
+                    supportingText = if (nameError) {
+                        { Text("Name cannot be blank") }
+                    } else null,
                 )
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.updateUserName(nameInput)
+                        if (nameInput.isBlank()) {
+                            nameError = true
+                            return@Button
+                        }
+                        viewModel.updateUserName(nameInput.trim())
                         showNameDialog = false
                     },
                     shape = MaterialTheme.shapes.extraLarge,

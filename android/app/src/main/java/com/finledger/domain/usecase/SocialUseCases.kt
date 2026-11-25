@@ -3,7 +3,35 @@ package com.finledger.domain.usecase
 import com.finledger.data.local.entity.*
 import com.finledger.data.repository.SocialRepository
 import com.finledger.data.repository.TransactionRepository
+import com.finledger.domain.model.TransactionWithDetails
 import javax.inject.Inject
+
+data class FriendPaidShareEntry(
+    val expense: SharedExpenseEntity,
+    val userSharePaise: Long,
+)
+
+object FriendPaidSharedExpenseHelper {
+    fun resolveFriendPaidShares(
+        transactions: List<TransactionWithDetails>,
+        sharedExpenses: List<SharedExpenseEntity>,
+        splits: List<ExpenseSplitEntity>,
+    ): List<FriendPaidShareEntry> {
+        val recordedSharedIds = transactions.mapNotNull {
+            val tx = it.transaction
+            if (!tx.isDeleted && tx.status != TransactionStatus.CANCELLED) tx.sharedExpenseId else null
+        }.toSet()
+
+        val splitsByExp = splits.groupBy { it.sharedExpenseId }
+        return sharedExpenses.mapNotNull { exp ->
+            if (exp.isDeleted || exp.id in recordedSharedIds) return@mapNotNull null
+            val userShare = splitsByExp[exp.id].orEmpty()
+                .filter { !it.isExcluded && it.personId == SplitCalculator.USER_PERSON_ID }
+                .sumOf { it.shareAmount }
+            if (userShare > 0L) FriendPaidShareEntry(exp, userShare) else null
+        }
+    }
+}
 
 class AddPersonUseCase @Inject constructor(
     private val socialRepository: SocialRepository,

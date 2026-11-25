@@ -137,7 +137,7 @@ fun AnalyticsScreen(
                         }
 
                         items(state.categoryBreakdown, key = { it.categoryId ?: -1L }) { cat ->
-                            val isSelected = state.selectedCategoryId == cat.categoryId
+                            val isSelected = state.hasSelectedCategory && state.selectedCategoryId == cat.categoryId
                             Card(
                                 shape = MaterialTheme.shapes.large,
                                 colors = CardDefaults.cardColors(
@@ -172,7 +172,7 @@ fun AnalyticsScreen(
                             }
                         }
 
-                        if (state.selectedCategoryId != null && state.drilldownTransactions.isNotEmpty()) {
+                        if (state.hasSelectedCategory && state.drilldownTransactions.isNotEmpty()) {
                             item {
                                 Text(
                                     text = "Category Transactions",
@@ -207,7 +207,7 @@ fun AnalyticsScreen(
                                 }
                             }
                         }
-                        items(state.cashFlowPoints) { pt ->
+                        items(state.cashFlowPoints, key = { it.label }) { pt ->
                             Card(
                                 shape = MaterialTheme.shapes.large,
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -256,32 +256,43 @@ fun AnalyticsScreen(
                                 color = FinLedgerTheme.colors.inkMuted48,
                             )
                         }
-                        items(state.agingReport, key = { it.person.id }) { row ->
-                            Card(
-                                shape = MaterialTheme.shapes.large,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(Spacing.md),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                        if (state.agingReport.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "All settled up — nobody owes you money.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = FinLedgerTheme.colors.inkMuted48,
+                                    modifier = Modifier.padding(vertical = Spacing.md),
+                                )
+                            }
+                        } else {
+                            items(state.agingReport, key = { it.person.id }) { row ->
+                                Card(
+                                    shape = MaterialTheme.shapes.large,
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                 ) {
-                                    Column {
-                                        Text(row.person.name, style = MaterialTheme.typography.bodyLarge)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(Spacing.md),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Column {
+                                            Text(row.person.name, style = MaterialTheme.typography.bodyLarge)
+                                            Text(
+                                                text = "${row.daysOutstanding} days (${row.bucketLabel})",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = FinLedgerTheme.colors.inkMuted48,
+                                            )
+                                        }
                                         Text(
-                                            text = "${row.daysOutstanding} days (${row.bucketLabel})",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = FinLedgerTheme.colors.inkMuted48,
+                                            text = MoneyFormatter.format(row.outstandingPaise, state.primaryCurrency),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = FinLedgerTheme.colors.positive,
                                         )
                                     }
-                                    Text(
-                                        text = MoneyFormatter.format(row.outstandingPaise, state.primaryCurrency),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = FinLedgerTheme.colors.positive,
-                                    )
                                 }
                             }
                         }

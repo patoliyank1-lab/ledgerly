@@ -127,21 +127,28 @@ class AddInvestmentUseCase @Inject constructor(
     ): Result<Unit> {
         val inv = insightRepository.getInvestmentById(investmentId)
             ?: return Result.failure(IllegalStateException("Investment not found"))
-        if (units <= 0.0 || pricePerUnitPaise <= 0L) {
-            return Result.failure(IllegalArgumentException("Units and price must be positive"))
+        if (tradeType != InvestmentTransactionType.DIVIDEND && units <= 0.0) {
+            return Result.failure(IllegalArgumentException("Units must be positive"))
+        }
+        if (pricePerUnitPaise <= 0L) {
+            return Result.failure(IllegalArgumentException("Amount / price must be positive"))
         }
         if (tradeType == InvestmentTransactionType.SELL && units > inv.currentUnits + 0.0001) {
             return Result.failure(IllegalArgumentException("Cannot sell more units than held (${inv.currentUnits})"))
         }
 
         return runCatching {
-            val totalAmount = (units * pricePerUnitPaise).roundToLong()
+            val totalAmount = if (tradeType == InvestmentTransactionType.DIVIDEND && units <= 0.0) {
+                pricePerUnitPaise
+            } else {
+                (units * pricePerUnitPaise).roundToLong()
+            }
             insightRepository.insertInvestmentTransaction(
                 InvestmentTransactionEntity(
                     investmentId = investmentId,
                     type = tradeType,
                     date = dateMs,
-                    units = units,
+                    units = if (tradeType == InvestmentTransactionType.DIVIDEND) 0.0 else units,
                     pricePerUnit = pricePerUnitPaise,
                     totalAmount = totalAmount,
                     fees = feesPaise,
@@ -190,6 +197,7 @@ class AddInvestmentUseCase @Inject constructor(
                                 type = TransactionType.INVESTMENT_BUY,
                                 amount = totalAmount,
                                 personalAmount = 0L,
+                                amountInPrimary = totalAmount,
                                 date = dateMs,
                                 accountId = accountId,
                                 merchantOrPayee = inv.name,
@@ -203,6 +211,7 @@ class AddInvestmentUseCase @Inject constructor(
                                 type = TransactionType.INVESTMENT_SELL,
                                 amount = totalAmount,
                                 personalAmount = 0L,
+                                amountInPrimary = totalAmount,
                                 date = dateMs,
                                 accountId = accountId,
                                 merchantOrPayee = inv.name,
@@ -216,6 +225,7 @@ class AddInvestmentUseCase @Inject constructor(
                                 type = TransactionType.INCOME,
                                 amount = totalAmount,
                                 personalAmount = totalAmount,
+                                amountInPrimary = totalAmount,
                                 date = dateMs,
                                 accountId = accountId,
                                 merchantOrPayee = inv.name,
@@ -223,6 +233,21 @@ class AddInvestmentUseCase @Inject constructor(
                             )
                         )
                     }
+                }
+                val charges = feesPaise + taxesPaise
+                if (charges > 0L) {
+                    transactionRepository.insert(
+                        TransactionEntity(
+                            type = TransactionType.EXPENSE,
+                            amount = charges,
+                            personalAmount = charges,
+                            amountInPrimary = charges,
+                            date = dateMs,
+                            accountId = accountId,
+                            merchantOrPayee = inv.platform.ifBlank { inv.name },
+                            description = "Investment brokerage & taxes: ${inv.name}",
+                        )
+                    )
                 }
             }
             Unit

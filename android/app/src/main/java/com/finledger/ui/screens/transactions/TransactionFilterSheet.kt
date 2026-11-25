@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -18,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,7 +33,9 @@ import com.finledger.data.local.entity.TransactionType
 import com.finledger.domain.model.AccountWithBalance
 import com.finledger.domain.model.TransactionFilter
 import com.finledger.ui.components.DatePickerField
+import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
+import java.util.Calendar
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -48,10 +52,12 @@ fun TransactionFilterSheet(
     var selectedCategoryId by remember { mutableStateOf(currentFilter.categoryId) }
     var startDateMs by remember { mutableStateOf(currentFilter.startDateMs) }
     var endDateMs by remember { mutableStateOf(currentFilter.endDateMs) }
+    var dateError by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
@@ -73,14 +79,7 @@ fun TransactionFilterSheet(
                     onClick = { selectedType = null },
                     label = { Text("All") },
                 )
-                listOf(
-                    TransactionType.EXPENSE,
-                    TransactionType.INCOME,
-                    TransactionType.TRANSFER,
-                    TransactionType.REFUND,
-                    TransactionType.LENDING,
-                    TransactionType.BORROWING,
-                ).forEach { type ->
+                TransactionType.entries.forEach { type ->
                     FilterChip(
                         selected = selectedType == type,
                         onClick = { selectedType = if (selectedType == type) null else type },
@@ -131,20 +130,41 @@ fun TransactionFilterSheet(
                 }
             }
 
-            Text("Date Range", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Date Range", style = MaterialTheme.typography.titleSmall)
+                if (startDateMs != null || endDateMs != null) {
+                    TextButton(onClick = {
+                        startDateMs = null
+                        endDateMs = null
+                        dateError = null
+                    }) { Text("Clear") }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 DatePickerField(
                     dateMs = startDateMs ?: (System.currentTimeMillis() - 30L * 86_400_000L),
-                    onDateSelected = { startDateMs = it },
-                    label = "From",
+                    onDateSelected = {
+                        startDateMs = startOfDay(it)
+                        dateError = null
+                    },
+                    label = if (startDateMs == null) "From (Any)" else "From",
                     modifier = Modifier.weight(1f),
                 )
                 DatePickerField(
                     dateMs = endDateMs ?: System.currentTimeMillis(),
-                    onDateSelected = { endDateMs = it },
-                    label = "To",
+                    onDateSelected = {
+                        endDateMs = endOfDay(it)
+                        dateError = null
+                    },
+                    label = if (endDateMs == null) "To (Any)" else "To",
                     modifier = Modifier.weight(1f),
                 )
+            }
+            dateError?.let {
+                Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(modifier = Modifier.height(Spacing.xs))
@@ -165,13 +185,19 @@ fun TransactionFilterSheet(
                 }
                 Button(
                     onClick = {
+                        val s = startDateMs
+                        val e = endDateMs
+                        if (s != null && e != null && s > e) {
+                            dateError = "From date cannot be after To date"
+                            return@Button
+                        }
                         onApply(
                             currentFilter.copy(
                                 type = selectedType,
                                 accountId = selectedAccountId,
                                 categoryId = selectedCategoryId,
-                                startDateMs = startDateMs,
-                                endDateMs = endDateMs,
+                                startDateMs = s,
+                                endDateMs = e,
                             )
                         )
                         onDismiss()
@@ -187,4 +213,20 @@ fun TransactionFilterSheet(
         }
     }
 }
+
+private fun startOfDay(epochMs: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = epochMs
+    set(Calendar.HOUR_OF_DAY, 0)
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun endOfDay(epochMs: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = epochMs
+    set(Calendar.HOUR_OF_DAY, 23)
+    set(Calendar.MINUTE, 59)
+    set(Calendar.SECOND, 59)
+    set(Calendar.MILLISECOND, 999)
+}.timeInMillis
 

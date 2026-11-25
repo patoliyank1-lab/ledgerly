@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -27,12 +28,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,15 +60,27 @@ fun AccountDetailScreen(
     onOpenTransaction: (Long) -> Unit,
     viewModel: AccountsViewModel = hiltViewModel(),
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val accountWithBalance by viewModel.observeAccount(accountId).collectAsStateWithLifecycle()
     val transactions by viewModel.observeTransactionsForAccount(accountId).collectAsStateWithLifecycle()
     var showEditSheet by remember { mutableStateOf(false) }
     var showReconcileDialog by remember { mutableStateOf(false) }
+    var showArchiveConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
 
     val item = accountWithBalance
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(item?.account?.name ?: "Account", style = MaterialTheme.typography.headlineMedium) },
@@ -78,11 +94,11 @@ fun AccountDetailScreen(
                         IconButton(onClick = { showEditSheet = true }) {
                             Icon(Icons.Outlined.Edit, contentDescription = "Edit account")
                         }
-                        IconButton(onClick = {
-                            viewModel.archiveAccount(accountId)
-                            onBack()
-                        }) {
+                        IconButton(onClick = { showArchiveConfirm = true }) {
                             Icon(Icons.Outlined.Archive, contentDescription = "Archive account")
+                        }
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete account")
                         }
                     }
                 },
@@ -161,9 +177,11 @@ fun AccountDetailScreen(
             items(transactions, key = { it.transaction.id }) { detail ->
                 val tx = detail.transaction
                 val isIncomingTransfer = tx.type == TransactionType.TRANSFER && tx.toAccountId == accountId
+                val isPositiveAdjustment = tx.type == TransactionType.ACCOUNT_ADJUSTMENT && tx.adjustmentSign > 0
                 val amountPrefix = when {
                     tx.type == TransactionType.INCOME || tx.type == TransactionType.REFUND ||
                         tx.type == TransactionType.BORROWING || tx.type == TransactionType.REPAYMENT_RECEIVED ||
+                        tx.type == TransactionType.INVESTMENT_SELL || isPositiveAdjustment ||
                         isIncomingTransfer -> "+"
                     else -> "-"
                 }
@@ -186,7 +204,7 @@ fun AccountDetailScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = tx.merchantOrPayee.ifBlank { detail.category?.name ?: tx.type.displayName },
+                                text = tx.merchantOrPayee.ifBlank { tx.description.ifBlank { detail.category?.name ?: tx.type.displayName } },
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Text(
@@ -268,6 +286,46 @@ fun AccountDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showReconcileDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showArchiveConfirm && item != null) {
+        AlertDialog(
+            onDismissRequest = { showArchiveConfirm = false },
+            title = { Text("Archive ${item.account.name}?") },
+            text = { Text("Archived accounts are hidden from active balances while keeping full transaction history.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showArchiveConfirm = false
+                        viewModel.archiveAccount(accountId)
+                        onBack()
+                    },
+                ) { Text("Archive") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showArchiveConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showDeleteConfirm && item != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete ${item.account.name}?") },
+            text = { Text("This account will be moved to Trash and can be restored from Settings.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deleteAccount(accountId)
+                        onBack()
+                    },
+                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
             },
         )
     }

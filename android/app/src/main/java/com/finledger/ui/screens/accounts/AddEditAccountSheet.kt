@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -75,10 +76,12 @@ fun AddEditAccountSheet(
     var dueDayText by remember { mutableStateOf(existing?.dueDay?.toString() ?: "") }
     var notes by remember { mutableStateOf(existing?.notes ?: "") }
     var nameError by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
@@ -102,6 +105,9 @@ fun AddEditAccountSheet(
                 label = { Text("Account Name") },
                 placeholder = { Text("e.g., HDFC Savings, Cash Wallet") },
                 isError = nameError,
+                supportingText = if (nameError) {
+                    { Text("Account name is required") }
+                } else null,
                 singleLine = true,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
@@ -182,6 +188,14 @@ fun AddEditAccountSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            validationError?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
             Spacer(modifier = Modifier.height(Spacing.xs))
 
             Row(
@@ -198,14 +212,43 @@ fun AddEditAccountSheet(
                 }
                 Button(
                     onClick = {
+                        validationError = null
                         if (name.isBlank()) {
                             nameError = true
                             return@Button
                         }
-                        val opening = MoneyFormatter.parseToPaise(openingText) ?: 0L
-                        val limit = MoneyFormatter.parseToPaise(limitText)
-                        val bDay = billingDayText.toIntOrNull()?.coerceIn(1, 31)
-                        val dDay = dueDayText.toIntOrNull()?.coerceIn(1, 31)
+                        val opening = if (openingText.isBlank()) {
+                            0L
+                        } else {
+                            MoneyFormatter.parseToPaise(openingText) ?: run {
+                                validationError = "Enter a valid opening balance amount"
+                                return@Button
+                            }
+                        }
+                        val limit = if (type == AccountType.CREDIT_CARD && limitText.isNotBlank()) {
+                            val parsed = MoneyFormatter.parseToPaise(limitText)
+                            if (parsed == null || parsed <= 0L) {
+                                validationError = "Credit limit must be a valid positive amount"
+                                return@Button
+                            }
+                            parsed
+                        } else null
+                        val bDay = if (type == AccountType.CREDIT_CARD && billingDayText.isNotBlank()) {
+                            val d = billingDayText.toIntOrNull()
+                            if (d == null || d !in 1..31) {
+                                validationError = "Statement day must be between 1 and 31"
+                                return@Button
+                            }
+                            d
+                        } else null
+                        val dDay = if (type == AccountType.CREDIT_CARD && dueDayText.isNotBlank()) {
+                            val d = dueDayText.toIntOrNull()
+                            if (d == null || d !in 1..31) {
+                                validationError = "Due day must be between 1 and 31"
+                                return@Button
+                            }
+                            d
+                        } else null
                         onSave(name, type, bank, masked, existing?.currency ?: defaultCurrency, opening, limit, bDay, dDay, notes)
                     },
                     shape = MaterialTheme.shapes.extraLarge,

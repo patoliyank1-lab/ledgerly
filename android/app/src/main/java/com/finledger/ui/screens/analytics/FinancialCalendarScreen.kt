@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -64,6 +66,8 @@ import javax.inject.Inject
 
 data class CalendarActivityItem(
     val id: String,
+    val targetId: Long,
+    val kind: String, // "TX", "BILL", "LOAN", "EVENT"
     val dateMs: Long,
     val title: String,
     val typeLabel: String, // "Transaction", "Bill", "Loan", "Event"
@@ -90,6 +94,8 @@ class FinancialCalendarViewModel @Inject constructor(
             list.add(
                 CalendarActivityItem(
                     id = "tx_${d.transaction.id}",
+                    targetId = d.transaction.id,
+                    kind = "TX",
                     dateMs = d.transaction.date,
                     title = d.transaction.merchantOrPayee.ifBlank { d.category?.name ?: d.transaction.type.displayName },
                     typeLabel = d.transaction.type.displayName,
@@ -98,15 +104,15 @@ class FinancialCalendarViewModel @Inject constructor(
             )
         }
         bills.forEach { b ->
-            list.add(CalendarActivityItem("bill_${b.id}", b.nextDueDateMs, "Bill due: ${b.name}", "Bill", b.expectedAmount))
+            list.add(CalendarActivityItem("bill_${b.id}", b.id, "BILL", b.nextDueDateMs, "Bill due: ${b.name}", "Bill", b.expectedAmount))
         }
         loans.forEach { l ->
             l.expectedRepaymentDate?.let { due ->
-                list.add(CalendarActivityItem("loan_${l.id}", due, "Loan due: ${l.personOrOrg}", "Loan", l.principalAmount))
+                list.add(CalendarActivityItem("loan_${l.id}", l.id, "LOAN", due, "Loan due: ${l.personOrOrg}", "Loan", l.principalAmount))
             }
         }
         events.forEach { ev ->
-            list.add(CalendarActivityItem("ev_${ev.id}", ev.startDate, "Event: ${ev.name}", "Event", null))
+            list.add(CalendarActivityItem("ev_${ev.id}", ev.id, "EVENT", ev.startDate, "Event: ${ev.name}", "Event", null))
         }
         prefs.primaryCurrency to list.sortedByDescending { it.dateMs }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "INR" to emptyList())
@@ -115,6 +121,10 @@ class FinancialCalendarViewModel @Inject constructor(
 @Composable
 fun FinancialCalendarScreen(
     onBack: () -> Unit,
+    onOpenTransaction: (Long) -> Unit = {},
+    onOpenBills: () -> Unit = {},
+    onOpenLoan: (Long) -> Unit = {},
+    onOpenEvent: (Long) -> Unit = {},
     viewModel: FinancialCalendarViewModel = hiltViewModel(),
 ) {
     val (currency, allItems) = viewModel.items.collectAsStateWithLifecycle().value
@@ -124,13 +134,27 @@ fun FinancialCalendarScreen(
 
     val monthCal = remember(monthOffset) {
         Calendar.getInstance().apply {
-            add(Calendar.MONTH, monthOffset)
             set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.MONTH, monthOffset)
         }
     }
     val year = monthCal.get(Calendar.YEAR)
     val month = monthCal.get(Calendar.MONTH)
     val daysInMonth = monthCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val leadingBlanks = (monthCal.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY).coerceIn(0, 6)
+
+    LaunchedEffect(daysInMonth) {
+        selectedDay = selectedDay.coerceIn(1, daysInMonth)
+    }
+
+    val onItemClick: (CalendarActivityItem) -> Unit = { item ->
+        when (item.kind) {
+            "TX" -> onOpenTransaction(item.targetId)
+            "BILL" -> onOpenBills()
+            "LOAN" -> onOpenLoan(item.targetId)
+            "EVENT" -> onOpenEvent(item.targetId)
+        }
+    }
 
     val dayMap = remember(allItems, year, month) {
         allItems.filter { item ->
@@ -171,7 +195,12 @@ fun FinancialCalendarScreen(
             }
 
             if (agendaMode) {
-                AgendaView(items = allItems, currency = currency, modifier = Modifier.weight(1f))
+                AgendaView(
+                    items = allItems,
+                    currency = currency,
+                    onItemClick = onItemClick,
+                    modifier = Modifier.weight(1f),
+                )
             } else {
                 Row(
                     modifier = Modifier
@@ -189,9 +218,22 @@ fun FinancialCalendarScreen(
                     }
                 }
 
-                // 7-column day grid
-                val rows = (1..daysInMonth).chunked(7)
+                // Weekday headers + offset 7-column day grid
+                val cells: List<Int?> = List(leadingBlanks) { null } + (1..daysInMonth).toList()
+                val rows = cells.chunked(7)
                 Column(modifier = Modifier.padding(horizontal = Spacing.md)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf("S", "M", "T", "W", "T", "F", "S").forEach { label ->
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = FinLedgerTheme.colors.inkMuted48,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                     rows.forEach { week ->
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             for (i in 0 until 7) {
@@ -236,6 +278,7 @@ fun FinancialCalendarScreen(
                     day = selectedDay,
                     items = dayMap[selectedDay].orEmpty(),
                     currency = currency,
+                    onItemClick = onItemClick,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -248,6 +291,7 @@ fun CalendarDayDetail(
     day: Int,
     items: List<CalendarActivityItem>,
     currency: String,
+    onItemClick: (CalendarActivityItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -268,7 +312,7 @@ fun CalendarDayDetail(
             }
         } else {
             items(items, key = { it.id }) { item ->
-                CalendarActivityCard(item, currency)
+                CalendarActivityCard(item, currency, onClick = { onItemClick(item) })
             }
         }
     }
@@ -278,6 +322,7 @@ fun CalendarDayDetail(
 fun AgendaView(
     items: List<CalendarActivityItem>,
     currency: String,
+    onItemClick: (CalendarActivityItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -286,18 +331,25 @@ fun AgendaView(
         verticalArrangement = Arrangement.spacedBy(Spacing.xs),
     ) {
         items(items, key = { it.id }) { item ->
-            CalendarActivityCard(item, currency)
+            CalendarActivityCard(item, currency, onClick = { onItemClick(item) })
         }
     }
 }
 
 @Composable
-private fun CalendarActivityCard(item: CalendarActivityItem, currency: String) {
+private fun CalendarActivityCard(
+    item: CalendarActivityItem,
+    currency: String,
+    onClick: () -> Unit = {},
+) {
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier

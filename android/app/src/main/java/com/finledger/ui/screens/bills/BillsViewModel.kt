@@ -115,13 +115,22 @@ class BillsViewModel @Inject constructor(
         }
     }
 
-    fun markBillPaid(bill: BillEntity, actualAmountPaise: Long, accountId: Long) {
+    fun markBillPaid(bill: BillEntity, actualAmountPaise: Long, accountId: Long, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
             markBillPaidUseCase(bill, actualAmountPaise, accountId, System.currentTimeMillis())
+                .onSuccess {
+                    _error.value = null
+                    onSuccess()
+                }
+                .onFailure { _error.value = it.message ?: "Failed to record bill payment" }
         }
     }
 
     fun deleteBill(id: Long) {
         viewModelScope.launch { commitmentRepository.deleteBill(id) }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }

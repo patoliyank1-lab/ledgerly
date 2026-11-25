@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +34,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -60,7 +62,9 @@ fun AddLoanScreen(
     var principalText by remember { mutableStateOf("") }
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }
     var dateGivenMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var expectedDateMs by remember { mutableStateOf<Long?>(null) }
+    var hasExpectedDate by remember { mutableStateOf(true) }
+    var expectedDateMs by remember { mutableLongStateOf(System.currentTimeMillis() + 30L * 86_400_000L) }
+    var repaymentFrequency by remember { mutableStateOf("NONE") }
     var interestRateText by remember { mutableStateOf("") }
     var guarantor by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
@@ -131,7 +135,14 @@ fun AddLoanScreen(
 
             OutlinedTextField(
                 value = personOrOrg,
-                onValueChange = { personOrOrg = it; errorText = null },
+                onValueChange = {
+                    personOrOrg = it
+                    val linked = state.persons.firstOrNull { p -> p.id == selectedPersonId }
+                    if (linked != null && !linked.name.equals(it.trim(), ignoreCase = true)) {
+                        selectedPersonId = null
+                    }
+                    errorText = null
+                },
                 label = { Text(if (type == LoanType.LENT) "Borrower Name" else "Lender / Bank / Platform") },
                 singleLine = true,
                 shape = MaterialTheme.shapes.large,
@@ -153,11 +164,28 @@ fun AddLoanScreen(
             )
 
             DatePickerField(dateMs = dateGivenMs, onDateSelected = { dateGivenMs = it }, label = "Loan Date")
-            DatePickerField(
-                dateMs = expectedDateMs ?: (dateGivenMs + 30L * 86_400_000L),
-                onDateSelected = { expectedDateMs = it },
-                label = "Expected Repayment / Due Date",
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = hasExpectedDate, onCheckedChange = { hasExpectedDate = it })
+                Text("Set Expected Repayment / Due Date", style = MaterialTheme.typography.bodySmall)
+            }
+            if (hasExpectedDate) {
+                DatePickerField(
+                    dateMs = expectedDateMs,
+                    onDateSelected = { expectedDateMs = it },
+                    label = "Expected Repayment / Due Date",
+                )
+            }
+
+            Text("Repayment Frequency", style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                listOf("NONE" to "Flexible / None", "ONE_TIME" to "One-time", "MONTHLY" to "Monthly", "QUARTERLY" to "Quarterly").forEach { (code, label) ->
+                    FilterChip(
+                        selected = repaymentFrequency == code,
+                        onClick = { repaymentFrequency = code },
+                        label = { Text(label) },
+                    )
+                }
+            }
 
             OutlinedTextField(
                 value = interestRateText,
@@ -203,9 +231,9 @@ fun AddLoanScreen(
                         personId = selectedPersonId,
                         principalPaise = principal,
                         dateGivenMs = dateGivenMs,
-                        expectedRepaymentDateMs = expectedDateMs,
+                        expectedRepaymentDateMs = if (hasExpectedDate) expectedDateMs else null,
                         interestRate = interestRateText.toDoubleOrNull() ?: 0.0,
-                        repaymentFrequency = "NONE",
+                        repaymentFrequency = repaymentFrequency,
                         guarantorName = guarantor,
                         accountId = selectedAccountId,
                         notes = notes,

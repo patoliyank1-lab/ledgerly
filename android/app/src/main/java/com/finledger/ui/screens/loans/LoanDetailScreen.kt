@@ -16,6 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -59,6 +63,8 @@ fun LoanDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val repayments by viewModel.observeRepayments(loanId).collectAsStateWithLifecycle()
     val item = state.loans.firstOrNull { it.loan.id == loanId }
+    var showCloseConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -68,6 +74,18 @@ fun LoanDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (item != null) {
+                        if (item.loan.status != LoanStatus.CLOSED) {
+                            IconButton(onClick = { showCloseConfirm = true }) {
+                                Icon(Icons.Outlined.CheckCircle, contentDescription = "Close loan")
+                            }
+                        }
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete loan")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -163,6 +181,40 @@ fun LoanDetailScreen(
                 }
             }
         }
+    }
+
+    if (showCloseConfirm && item != null) {
+        AlertDialog(
+            onDismissRequest = { showCloseConfirm = false },
+            title = { Text("Close / Write-Off Loan?") },
+            text = { Text("Marks this loan as Closed regardless of remaining balance.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.closeLoan(loanId)
+                    showCloseConfirm = false
+                }) { Text("Close Loan") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloseConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showDeleteConfirm && item != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Loan?") },
+            text = { Text("This loan record will be deleted.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    viewModel.deleteLoan(loanId, onDone = onBack)
+                }) { Text("Delete", color = FinLedgerTheme.colors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

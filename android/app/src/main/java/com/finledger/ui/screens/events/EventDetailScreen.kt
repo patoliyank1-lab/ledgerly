@@ -1,6 +1,7 @@
 package com.finledger.ui.screens.events
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,15 +29,22 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.finledger.data.local.entity.SettlementDirection
+import com.finledger.data.local.entity.SharedExpenseEntity
+import com.finledger.domain.usecase.SplitCalculator
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.theme.FinLedgerTheme
@@ -46,9 +56,11 @@ fun EventDetailScreen(
     onBack: () -> Unit,
     onAddSharedExpense: (eventId: Long, groupId: Long?) -> Unit,
     onOpenSummary: (Long) -> Unit,
+    onEditEvent: (Long) -> Unit = {},
     viewModel: EventsViewModel = hiltViewModel(),
 ) {
     val detail by viewModel.observeEventDetail(eventId).collectAsStateWithLifecycle()
+    var inspectingExpense by remember { mutableStateOf<SharedExpenseEntity?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -58,6 +70,11 @@ fun EventDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { onEditEvent(eventId) }) {
+                        Icon(Icons.Outlined.Edit, contentDescription = "Edit event")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -135,7 +152,8 @@ fun EventDetailScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = Spacing.md, vertical = Spacing.xxs),
+                        .padding(horizontal = Spacing.md, vertical = Spacing.xxs)
+                        .clickable { inspectingExpense = exp },
                 ) {
                     Row(
                         modifier = Modifier
@@ -161,12 +179,59 @@ fun EventDetailScreen(
             }
         }
     }
+
+    inspectingExpense?.let { exp ->
+        val payers = detail.payersByExpense[exp.id].orEmpty()
+        val splits = detail.splitsByExpense[exp.id].orEmpty().filter { !it.isExcluded }
+        AlertDialog(
+            onDismissRequest = { inspectingExpense = null },
+            title = { Text(exp.description) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(
+                        text = "${DateFormatter.formatDate(exp.date)} · ${MoneyFormatter.format(exp.totalAmount, exp.currency)} · ${exp.splitMethod.displayName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (payers.isNotEmpty()) {
+                        Text("Paid by:", style = MaterialTheme.typography.titleSmall)
+                        payers.forEach { p ->
+                            Text(
+                                text = "• ${viewModel.personName(p.personId, detail.participants)}: ${MoneyFormatter.format(p.amountPaid, exp.currency)}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    if (splits.isNotEmpty()) {
+                        Text("Split:", style = MaterialTheme.typography.titleSmall)
+                        splits.forEach { s ->
+                            Text(
+                                text = "• ${viewModel.personName(s.personId, detail.participants)}: ${MoneyFormatter.format(s.shareAmount, exp.currency)}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteSharedExpense(exp.id)
+                        inspectingExpense = null
+                    },
+                ) { Text("Delete", color = FinLedgerTheme.colors.negative) }
+            },
+            dismissButton = {
+                TextButton(onClick = { inspectingExpense = null }) { Text("Close") }
+            },
+        )
+    }
 }
 
 @Composable
 fun EventSummaryScreen(
     eventId: Long,
     onBack: () -> Unit,
+    onSettleSuggestion: (personId: Long, direction: SettlementDirection, amountPaise: Long, groupId: Long?, eventId: Long) -> Unit = { _, _, _, _, _ -> },
     viewModel: EventsViewModel = hiltViewModel(),
 ) {
     val detail by viewModel.observeEventDetail(eventId).collectAsStateWithLifecycle()
@@ -257,22 +322,47 @@ fun EventSummaryScreen(
                     Text("Suggested Settlement Plan", style = MaterialTheme.typography.titleSmall, color = FinLedgerTheme.colors.inkMuted48)
                 }
                 items(detail.suggestions) { s ->
+                    val involvesUser = s.fromPersonId == SplitCalculator.USER_PERSON_ID ||
+                        s.toPersonId == SplitCalculator.USER_PERSON_ID
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = if (involvesUser) {
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) {
+                                        onSettleSuggestion(s.toPersonId, SettlementDirection.PAID, s.amountPaise, detail.event?.groupId, eventId)
+                                    } else {
+                                        onSettleSuggestion(s.fromPersonId, SettlementDirection.RECEIVED, s.amountPaise, detail.event?.groupId, eventId)
+                                    }
+                                }
+                        } else {
+                            Modifier.fillMaxWidth()
+                        },
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(Spacing.md),
                             horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = "${viewModel.personName(s.fromPersonId, detail.participants)} → ${viewModel.personName(s.toPersonId, detail.participants)}",
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${viewModel.personName(s.fromPersonId, detail.participants)} → ${viewModel.personName(s.toPersonId, detail.participants)}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                if (involvesUser) {
+                                    Text(
+                                        text = "Tap to record settlement",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
                             Text(
                                 text = MoneyFormatter.format(s.amountPaise, detail.primaryCurrency),
                                 style = MaterialTheme.typography.bodyLarge,

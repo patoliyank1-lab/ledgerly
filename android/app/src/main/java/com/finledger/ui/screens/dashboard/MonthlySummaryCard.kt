@@ -37,7 +37,9 @@ fun MonthlySummaryCard(
             modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.xl),
         ) {
             Text(
-                text = DateFormatter.formatMonthYear(System.currentTimeMillis()),
+                text = DateFormatter.formatMonthYear(
+                    if (summary.monthStartMs > 0L) summary.monthStartMs else System.currentTimeMillis()
+                ),
                 style = MaterialTheme.typography.titleSmall,
                 color = FinLedgerTheme.colors.bodyMuted,
             )

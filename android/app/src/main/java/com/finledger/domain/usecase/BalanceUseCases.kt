@@ -356,12 +356,12 @@ class RecordSettlementUseCase @Inject constructor(
 }
 
 class SimplifySettlementsUseCase @Inject constructor() {
-    operator fun invoke(
+    fun computeNetMap(
         expenses: List<SharedExpenseEntity>,
         payersByExpense: Map<Long, List<ExpensePayerEntity>>,
         splitsByExpense: Map<Long, List<ExpenseSplitEntity>>,
         settlements: List<SettlementEntity> = emptyList(),
-    ): List<SuggestedSettlement> {
+    ): Map<Long, Long> {
         val net = mutableMapOf<Long, Long>()
         for (exp in expenses) {
             for (p in payersByExpense[exp.id].orEmpty()) {
@@ -383,6 +383,16 @@ class SimplifySettlementsUseCase @Inject constructor() {
                 net[st.personId] = (net[st.personId] ?: 0L) - st.amount
             }
         }
+        return net
+    }
+
+    operator fun invoke(
+        expenses: List<SharedExpenseEntity>,
+        payersByExpense: Map<Long, List<ExpensePayerEntity>>,
+        splitsByExpense: Map<Long, List<ExpenseSplitEntity>>,
+        settlements: List<SettlementEntity> = emptyList(),
+    ): List<SuggestedSettlement> {
+        val net = computeNetMap(expenses, payersByExpense, splitsByExpense, settlements)
         return BalanceCalculator.simplifyDebts(net)
     }
 }

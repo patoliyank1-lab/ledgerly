@@ -6,6 +6,8 @@ import com.finledger.data.local.entity.AccountEntity
 import com.finledger.data.local.entity.AccountType
 import com.finledger.data.local.entity.CategoryEntity
 import com.finledger.data.local.entity.CategoryType
+import com.finledger.data.repository.UserPreferencesRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -15,6 +17,7 @@ import javax.inject.Singleton
 class DatabaseSeeder @Inject constructor(
     private val categoryDao: CategoryDao,
     private val accountDao: AccountDao,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) {
     private val mutex = Mutex()
 
@@ -23,19 +26,35 @@ class DatabaseSeeder @Inject constructor(
             if (categoryDao.count() == 0) {
                 categoryDao.insertAll(defaultCategories())
             }
-            if (accountDao.countActive() == 0) {
-                accountDao.insert(
-                    AccountEntity(
-                        name = "Cash Wallet",
-                        type = AccountType.CASH,
-                        bankOrProvider = "Cash",
-                        currency = "INR",
-                        openingBalance = 0L,
-                        iconName = "payments",
-                    )
-                )
+            val prefs = userPreferencesRepository.preferences.first()
+            val alreadySeeded = userPreferencesRepository.cashWalletSeeded.first()
+            if (prefs.onboardingCompleted && !alreadySeeded) {
+                seedInitialCashWalletInternal(prefs.primaryCurrency)
             }
         }
+    }
+
+    suspend fun seedInitialCashWallet(currency: String) {
+        mutex.withLock {
+            seedInitialCashWalletInternal(currency)
+        }
+    }
+
+    private suspend fun seedInitialCashWalletInternal(currency: String) {
+        if (userPreferencesRepository.cashWalletSeeded.first()) return
+        if (accountDao.countActive() == 0) {
+            accountDao.insert(
+                AccountEntity(
+                    name = "Cash Wallet",
+                    type = AccountType.CASH,
+                    bankOrProvider = "Cash",
+                    currency = currency,
+                    openingBalance = 0L,
+                    iconName = "payments",
+                )
+            )
+        }
+        userPreferencesRepository.setCashWalletSeeded(true)
     }
 
     private fun defaultCategories(): List<CategoryEntity> = listOf(

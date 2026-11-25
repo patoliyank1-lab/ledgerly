@@ -10,13 +10,16 @@ import androidx.compose.ui.unit.dp
  * - small: 8dp (dark utility buttons, inline imagery)
  * - medium: 11dp (pearl button capsules)
  * - large: 18dp (store utility cards, grids)
- * - extraLarge: full pill (primary CTAs, search inputs, option chips)
+ * - extraLarge: 28dp (Material 3 dialogs, date pickers, bottom sheets)
+ * - PillShape: full pill (primary CTAs, search inputs, option chips)
  */
+val PillShape = RoundedCornerShape(percent = 50)
+
 val FinLedgerShapes = Shapes(
     extraSmall = RoundedCornerShape(5.dp),
     small = RoundedCornerShape(8.dp),
     medium = RoundedCornerShape(11.dp),
     large = RoundedCornerShape(18.dp),
-    extraLarge = RoundedCornerShape(percent = 50),
+    extraLarge = RoundedCornerShape(28.dp),
 )
 

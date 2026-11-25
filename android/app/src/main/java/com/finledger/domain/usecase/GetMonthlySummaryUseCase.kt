@@ -2,25 +2,32 @@ package com.finledger.domain.usecase
 
 import com.finledger.data.local.entity.TransactionStatus
 import com.finledger.data.local.entity.TransactionType
+import com.finledger.data.repository.SocialRepository
 import com.finledger.data.repository.TransactionRepository
 import com.finledger.domain.model.MonthlySummary
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import java.util.Calendar
 import javax.inject.Inject
 
 /**
  * Computes monthly income, personal expense, and savings using FINANCIAL_RULES.md:
  * - Only EXPENSE.personalAmount counts as personal spending (shared expense user share only).
+ * - Friend-paid shared expenses (userPaid == 0) include the user's non-excluded split share.
  * - REFUND reduces personal spending.
  * - TRANSFER, LENDING, BORROWING, REPAYMENT_RECEIVED, REPAYMENT_MADE do not count as income/expense.
  */
 class GetMonthlySummaryUseCase @Inject constructor(
     private val transactionRepository: TransactionRepository,
+    private val socialRepository: SocialRepository,
 ) {
     operator fun invoke(year: Int? = null, monthZeroBased: Int? = null): Flow<MonthlySummary> {
         val (startMs, endMs) = monthBounds(year, monthZeroBased)
-        return transactionRepository.observeAllTransactionsWithDetails().map { list ->
+        return combine(
+            transactionRepository.observeAllTransactionsWithDetails(),
+            socialRepository.observeAllSharedExpenses(),
+            socialRepository.observeAllSplits(),
+        ) { list, sharedExpenses, splits ->
             var income = 0L
             var expense = 0L
 
@@ -34,6 +41,13 @@ class GetMonthlySummaryUseCase @Inject constructor(
                     TransactionType.EXPENSE -> expense += tx.personalAmount
                     TransactionType.REFUND -> expense -= tx.personalAmount
                     else -> Unit
+                }
+            }
+
+            val friendPaidShares = FriendPaidSharedExpenseHelper.resolveFriendPaidShares(list, sharedExpenses, splits)
+            for (entry in friendPaidShares) {
+                if (entry.expense.date in startMs..endMs) {
+                    expense += entry.userSharePaise
                 }
             }
 
@@ -55,10 +69,9 @@ class GetMonthlySummaryUseCase @Inject constructor(
     companion object {
         fun monthBounds(year: Int? = null, monthZeroBased: Int? = null): Pair<Long, Long> {
             val cal = Calendar.getInstance()
+            cal.set(Calendar.DAY_OF_MONTH, 1)
             if (year != null) cal.set(Calendar.YEAR, year)
             if (monthZeroBased != null) cal.set(Calendar.MONTH, monthZeroBased)
-
-            cal.set(Calendar.DAY_OF_MONTH, 1)
             cal.set(Calendar.HOUR_OF_DAY, 0)
             cal.set(Calendar.MINUTE, 0)
             cal.set(Calendar.SECOND, 0)

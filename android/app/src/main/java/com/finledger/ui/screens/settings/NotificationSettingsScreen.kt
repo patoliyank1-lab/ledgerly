@@ -49,9 +49,6 @@ fun NotificationSettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var billReminders by remember { mutableStateOf(true) }
-    var loanReminders by remember { mutableStateOf(true) }
-    var budgetAlerts by remember { mutableStateOf(true) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -101,22 +98,22 @@ fun NotificationSettingsScreen(
                         ToggleRow(
                             title = "Upcoming & Overdue Bills",
                             subtitle = "Notify 3 days before bill due date",
-                            checked = billReminders,
-                            onCheckedChange = { billReminders = it },
+                            checked = state.preferences.billRemindersEnabled,
+                            onCheckedChange = { viewModel.setBillRemindersEnabled(it) },
                         )
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
                         ToggleRow(
                             title = "Loan Repayments & Collections",
                             subtitle = "Notify ahead of expected repayment dates",
-                            checked = loanReminders,
-                            onCheckedChange = { loanReminders = it },
+                            checked = state.preferences.loanRemindersEnabled,
+                            onCheckedChange = { viewModel.setLoanRemindersEnabled(it) },
                         )
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
                         ToggleRow(
                             title = "Budget Limit Alerts",
                             subtitle = "Alert when spending reaches 80% of budget",
-                            checked = budgetAlerts,
-                            onCheckedChange = { budgetAlerts = it },
+                            checked = state.preferences.budgetAlertsEnabled,
+                            onCheckedChange = { viewModel.setBudgetAlertsEnabled(it) },
                         )
                     }
                 }
@@ -124,7 +121,7 @@ fun NotificationSettingsScreen(
 
             item {
                 Button(
-                    onClick = { ReminderScheduler.scheduleAll(context) },
+                    onClick = { ReminderScheduler.syncWithPreferences(context, state.preferences) },
                     shape = MaterialTheme.shapes.extraLarge,
                     modifier = Modifier.fillMaxWidth(),
                 ) {

@@ -136,7 +136,7 @@ fun NetWorthChart(
         return
     }
     val minVal = snapshots.minOf { it.netWorthPaise }
-    val maxVal = snapshots.maxOf { it.netWorthPaise }.coerceAtLeast(minVal + 1L)
+    val maxVal = snapshots.maxOf { it.netWorthPaise }
     val span = (maxVal - minVal).toFloat()
 
     Canvas(
@@ -145,12 +145,14 @@ fun NetWorthChart(
             .height(160.dp)
             .padding(Spacing.sm),
     ) {
+        val pad = 6.dp.toPx()
+        val usableHeight = (size.height - 2f * pad).coerceAtLeast(1f)
         val path = Path()
-        val stepX = size.width / (snapshots.size - 1).coerceAtLeast(1)
+        val stepX = (size.width - 2f * pad).coerceAtLeast(1f) / (snapshots.size - 1).coerceAtLeast(1)
         snapshots.forEachIndexed { idx, snap ->
-            val x = idx * stepX
-            val ratio = (snap.netWorthPaise - minVal).toFloat() / span
-            val y = size.height - (ratio * size.height)
+            val x = pad + idx * stepX
+            val ratio = if (span == 0f) 0.5f else (snap.netWorthPaise - minVal).toFloat() / span
+            val y = size.height - pad - (ratio * usableHeight)
             if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
             drawCircle(
                 color = ActionBlue,

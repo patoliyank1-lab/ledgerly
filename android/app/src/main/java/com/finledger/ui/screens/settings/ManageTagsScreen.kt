@@ -124,6 +124,7 @@ fun ManageTagsScreen(
 
     if (showAddDialog) {
         var name by remember { mutableStateOf("") }
+        var nameError by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
             title = { Text("Add Tag") },
@@ -131,8 +132,15 @@ fun ManageTagsScreen(
                 Column {
                     OutlinedTextField(
                         value = name,
-                        onValueChange = { name = it },
+                        onValueChange = {
+                            name = it
+                            nameError = false
+                        },
                         label = { Text("Tag Name") },
+                        isError = nameError,
+                        supportingText = if (nameError) {
+                            { Text("Tag name is required") }
+                        } else null,
                         singleLine = true,
                     )
                 }
@@ -140,7 +148,11 @@ fun ManageTagsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.addTag(name)
+                        if (name.isBlank()) {
+                            nameError = true
+                            return@Button
+                        }
+                        viewModel.addTag(name.trim())
                         showAddDialog = false
                     },
                     shape = MaterialTheme.shapes.extraLarge,
