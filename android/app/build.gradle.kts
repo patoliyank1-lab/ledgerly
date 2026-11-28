@@ -81,6 +81,11 @@ ksp {
     arg("room.generateKotlin", "true")
 }
 
+// Prevent debug and release KSP tasks from racing on the shared Room schema file during `gradle test`.
+tasks.matching { it.name == "kspReleaseKotlin" }.configureEach {
+    mustRunAfter("kspDebugKotlin")
+}
+
 dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
