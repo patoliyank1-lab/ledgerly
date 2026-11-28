@@ -45,6 +45,7 @@ import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.DatePickerField
+import com.finledger.ui.components.ExpandableSection
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -62,12 +63,13 @@ fun AddLoanScreen(
     var principalText by remember { mutableStateOf("") }
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }
     var dateGivenMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var hasExpectedDate by remember { mutableStateOf(true) }
+    var hasExpectedDate by remember { mutableStateOf(false) }
     var expectedDateMs by remember { mutableLongStateOf(System.currentTimeMillis() + 30L * 86_400_000L) }
     var repaymentFrequency by remember { mutableStateOf("NONE") }
     var interestRateText by remember { mutableStateOf("") }
     var guarantor by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var showMoreOptions by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.accounts) {
@@ -156,64 +158,78 @@ fun AddLoanScreen(
                 currency = state.primaryCurrency,
             )
 
-            AccountPickerDropdown(
-                accounts = state.accounts,
-                selectedAccountId = selectedAccountId,
-                onSelectAccount = { selectedAccountId = it.account.id },
-                label = if (type == LoanType.LENT) "Paid From Account" else "Deposited To Account",
-            )
-
             DatePickerField(dateMs = dateGivenMs, onDateSelected = { dateGivenMs = it }, label = "Loan Date")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = hasExpectedDate, onCheckedChange = { hasExpectedDate = it })
-                Text("Set Expected Repayment / Due Date", style = MaterialTheme.typography.bodySmall)
-            }
-            if (hasExpectedDate) {
-                DatePickerField(
-                    dateMs = expectedDateMs,
-                    onDateSelected = { expectedDateMs = it },
-                    label = "Expected Repayment / Due Date",
-                    showQuickChips = false,
-                )
-            }
 
-            Text("Repayment Frequency", style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                listOf("NONE" to "Single / No schedule", "MONTHLY" to "Monthly", "QUARTERLY" to "Quarterly").forEach { (code, label) ->
-                    FilterChip(
-                        selected = repaymentFrequency == code || (code == "NONE" && repaymentFrequency == "ONE_TIME"),
-                        onClick = { repaymentFrequency = code },
-                        label = { Text(label) },
+            val defaultAccName = state.accounts.firstOrNull { it.account.id == selectedAccountId }?.account?.name
+            ExpandableSection(
+                title = "More options",
+                subtitle = if (!showMoreOptions) {
+                    val accHint = defaultAccName?.let { "Account: $it · " }.orEmpty()
+                    "${accHint}Due date, repayment frequency, interest %, guarantor, notes"
+                } else {
+                    null
+                },
+                expanded = showMoreOptions,
+                onToggle = { showMoreOptions = !showMoreOptions },
+            ) {
+                AccountPickerDropdown(
+                    accounts = state.accounts,
+                    selectedAccountId = selectedAccountId,
+                    onSelectAccount = { selectedAccountId = it.account.id },
+                    label = if (type == LoanType.LENT) "Paid From Account" else "Deposited To Account",
+                )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = hasExpectedDate, onCheckedChange = { hasExpectedDate = it })
+                    Text("Set Expected Repayment / Due Date", style = MaterialTheme.typography.bodySmall)
+                }
+                if (hasExpectedDate) {
+                    DatePickerField(
+                        dateMs = expectedDateMs,
+                        onDateSelected = { expectedDateMs = it },
+                        label = "Expected Repayment / Due Date",
+                        showQuickChips = false,
                     )
                 }
+
+                Text("Repayment Frequency", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    listOf("NONE" to "Single / No schedule", "MONTHLY" to "Monthly", "QUARTERLY" to "Quarterly").forEach { (code, label) ->
+                        FilterChip(
+                            selected = repaymentFrequency == code || (code == "NONE" && repaymentFrequency == "ONE_TIME"),
+                            onClick = { repaymentFrequency = code },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = interestRateText,
+                    onValueChange = { interestRateText = it },
+                    label = { Text("Annual Interest Rate % (Optional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = guarantor,
+                    onValueChange = { guarantor = it },
+                    label = { Text("Guarantor (Optional)") },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Terms / Notes") },
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-
-            OutlinedTextField(
-                value = interestRateText,
-                onValueChange = { interestRateText = it },
-                label = { Text("Annual Interest Rate % (Optional)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            OutlinedTextField(
-                value = guarantor,
-                onValueChange = { guarantor = it },
-                label = { Text("Guarantor (Optional)") },
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Terms / Notes") },
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
-            )
 
             (errorText ?: state.errorMessage)?.let {
                 Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall)

@@ -81,97 +81,116 @@ fun LoansScreen(
             }
         },
     ) { padding ->
-        Column(
+        LoansContent(
+            onAddLoan = onAddLoan,
+            onOpenLoanDetail = onOpenLoanDetail,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
+            viewModel = viewModel,
+        )
+    }
+}
+
+@Composable
+fun LoansContent(
+    onAddLoan: () -> Unit,
+    onOpenLoanDetail: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: LoansViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var tabIndex by remember { mutableIntStateOf(0) }
+    val filtered = state.loans.filter {
+        if (tabIndex == 0) it.loan.type == LoanType.LENT else it.loan.type == LoanType.BORROWED
+    }
+
+    Column(modifier = modifier) {
+        Surface(
+            color = FinLedgerTheme.colors.tileDark1,
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Surface(
-                color = FinLedgerTheme.colors.tileDark1,
-                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                modifier = Modifier.fillMaxWidth(),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.lg),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Spacing.lg),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column {
-                        Text("Lent (Receivable)", style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.bodyMuted)
-                        Text(
-                            text = MoneyFormatter.format(state.totalLentOutstanding, state.primaryCurrency),
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = FinLedgerTheme.colors.positive,
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("Borrowed (Payable)", style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.bodyMuted)
-                        Text(
-                            text = MoneyFormatter.format(state.totalBorrowedOutstanding, state.primaryCurrency),
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = FinLedgerTheme.colors.negative,
-                        )
-                    }
+                Column {
+                    Text("Lent (Receivable)", style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.bodyMuted)
+                    Text(
+                        text = MoneyFormatter.format(state.totalLentOutstanding, state.primaryCurrency),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = FinLedgerTheme.colors.positive,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Borrowed (Payable)", style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.bodyMuted)
+                    Text(
+                        text = MoneyFormatter.format(state.totalBorrowedOutstanding, state.primaryCurrency),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = FinLedgerTheme.colors.negative,
+                    )
                 }
             }
+        }
 
-            TabRow(selectedTabIndex = tabIndex, containerColor = MaterialTheme.colorScheme.surface) {
-                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Lent") })
-                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Borrowed") })
-            }
+        TabRow(selectedTabIndex = tabIndex, containerColor = MaterialTheme.colorScheme.surface) {
+            Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Lent") })
+            Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Borrowed") })
+        }
 
-            if (filtered.isEmpty()) {
-                EmptyStateView(
-                    icon = Icons.Outlined.Money,
-                    title = if (tabIndex == 0) "No lending recorded" else "No borrowing recorded",
-                    subtitle = "Track principal, interest, repayment schedules, and partial repayments.",
-                    actionLabel = "Record Loan",
-                    onAction = onAddLoan,
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(Spacing.md),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-                ) {
-                    items(filtered, key = { it.loan.id }) { item ->
-                        Card(
-                            shape = MaterialTheme.shapes.large,
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        if (filtered.isEmpty()) {
+            EmptyStateView(
+                icon = Icons.Outlined.Money,
+                title = if (tabIndex == 0) "No lending recorded" else "No borrowing recorded",
+                subtitle = "Track principal, interest, repayment schedules, and partial repayments.",
+                actionLabel = "Record Loan",
+                onAction = onAddLoan,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                items(filtered, key = { it.loan.id }) { item ->
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenLoanDetail(item.loan.id) },
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onOpenLoanDetail(item.loan.id) },
+                                .padding(Spacing.md),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(Spacing.md),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(item.loan.personOrOrg, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        text = "${DateFormatter.formatDate(item.loan.dateGiven)} · ${item.loan.status.name}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = FinLedgerTheme.colors.inkMuted48,
-                                    )
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = MoneyFormatter.format(item.outstandingPrincipalPaise, item.loan.currency),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                    )
-                                    Text(
-                                        text = "of ${MoneyFormatter.format(item.loan.principalAmount, item.loan.currency)}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = FinLedgerTheme.colors.inkMuted48,
-                                    )
-                                }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.loan.personOrOrg, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    text = "${DateFormatter.formatDate(item.loan.dateGiven)} · ${item.loan.status.name}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = FinLedgerTheme.colors.inkMuted48,
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = MoneyFormatter.format(item.outstandingPrincipalPaise, item.loan.currency),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(
+                                    text = "of ${MoneyFormatter.format(item.loan.principalAmount, item.loan.currency)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = FinLedgerTheme.colors.inkMuted48,
+                                )
                             }
                         }
                     }

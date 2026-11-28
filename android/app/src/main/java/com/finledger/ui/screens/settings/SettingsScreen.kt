@@ -55,8 +55,7 @@ fun SettingsScreen(
     onManageTags: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenBackup: () -> Unit,
-    onOpenTrash: () -> Unit,
-    onOpenArchive: () -> Unit,
+    onOpenRecovery: () -> Unit,
     onOpenAuditHistory: () -> Unit,
     onSetupPin: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -64,6 +63,7 @@ fun SettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val prefs = state.preferences
     var showNameDialog by remember { mutableStateOf(false) }
+    var pendingCurrencyCode by remember { mutableStateOf<String?>(null) }
 
     val currencies = MoneyFormatter.SUPPORTED_CURRENCIES
 
@@ -117,7 +117,15 @@ fun SettingsScreen(
                             currencies.forEach { code ->
                                 FilterChip(
                                     selected = prefs.primaryCurrency == code,
-                                    onClick = { viewModel.updateCurrency(code) },
+                                    onClick = {
+                                        if (code != prefs.primaryCurrency) {
+                                            if (state.hasExistingFinancialData) {
+                                                pendingCurrencyCode = code
+                                            } else {
+                                                viewModel.updateCurrency(code)
+                                            }
+                                        }
+                                    },
                                     label = { Text(code) },
                                 )
                             }
@@ -140,6 +148,85 @@ fun SettingsScreen(
                         ThemeSelectorRow(
                             selected = prefs.themeMode,
                             onSelect = viewModel::updateThemeMode,
+                        )
+                    }
+                }
+            }
+
+            item {
+                Text("App Complexity & Modules", style = MaterialTheme.typography.titleSmall, color = FinLedgerTheme.colors.inkMuted48)
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                ) {
+                    Column {
+                        Column(
+                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        ) {
+                            Text("Experience Mode", style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.inkMuted48)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                                FilterChip(
+                                    selected = prefs.isSimpleMode,
+                                    onClick = { viewModel.setSimpleModePreset(true) },
+                                    label = { Text("Simple Mode") },
+                                )
+                                FilterChip(
+                                    selected = !prefs.isSimpleMode,
+                                    onClick = { viewModel.setSimpleModePreset(false) },
+                                    label = { Text("Advanced Mode") },
+                                )
+                            }
+                            Text(
+                                text = "Turning a module off hides its tabs & cards without deleting any saved records.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = FinLedgerTheme.colors.inkMuted48,
+                            )
+                        }
+                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
+                        SettingsSwitchRow(
+                            title = "Shared Expenses & Groups",
+                            subtitle = "Friends, splits, groups & events",
+                            checked = prefs.trackSharedAndPeople,
+                            onCheckedChange = viewModel::setTrackSharedAndPeople,
+                        )
+                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
+                        SettingsSwitchRow(
+                            title = "Loans",
+                            subtitle = "Money lent, borrowed & EMIs",
+                            checked = prefs.trackLoans,
+                            onCheckedChange = viewModel::setTrackLoans,
+                        )
+                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
+                        SettingsSwitchRow(
+                            title = "Investments & Net Worth",
+                            subtitle = "Holdings, assets & net worth tracking",
+                            checked = prefs.trackInvestments,
+                            onCheckedChange = viewModel::setTrackInvestments,
+                        )
+                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
+                        SettingsSwitchRow(
+                            title = "Bills, Budgets & Goals",
+                            subtitle = "Monthly limits, recurring bills & goals",
+                            checked = prefs.trackPlanning,
+                            onCheckedChange = viewModel::setTrackPlanning,
+                        )
+                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
+                        SettingsSwitchRow(
+                            title = "Optional Home Cards",
+                            subtitle = "Net worth & investment summary cards on Home",
+                            checked = prefs.showDashboardNetWorth,
+                            onCheckedChange = viewModel::setShowDashboardNetWorth,
+                        )
+                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
+                        SettingsSwitchRow(
+                            title = "Home Alerts Banner",
+                            subtitle = "Concise bill & budget alert on Home",
+                            checked = prefs.showDashboardAlerts,
+                            onCheckedChange = viewModel::setShowDashboardAlerts,
                         )
                     }
                 }
@@ -180,30 +267,18 @@ fun SettingsScreen(
                             onSetupPin,
                         )
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Scheduled Local Backup", style = MaterialTheme.typography.bodyLarge)
-                                Text("Weekly offline JSON snapshot", style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.inkMuted48)
-                            }
-                            Switch(
-                                checked = prefs.autoBackupEnabled,
-                                onCheckedChange = viewModel::setAutoBackupEnabled,
-                            )
-                        }
+                        SettingsSwitchRow(
+                            title = "Scheduled Local Backup",
+                            subtitle = "Weekly offline JSON snapshot",
+                            checked = prefs.autoBackupEnabled,
+                            onCheckedChange = viewModel::setAutoBackupEnabled,
+                        )
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
                         SettingsNavRow("Backup & Export Settings", "JSON, CSV, PDF", onOpenBackup)
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
                         SettingsNavRow("Change Log", "Audit trail of edits", onOpenAuditHistory)
                         HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
-                        SettingsNavRow("Archived Records", "Archived accounts & groups", onOpenArchive)
-                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
-                        SettingsNavRow("Trash & Recovery", "Restore deleted items", onOpenTrash)
+                        SettingsNavRow("Recovery (Trash & Archive)", "Restore deleted or archived items", onOpenRecovery)
                     }
                 }
             }
@@ -249,6 +324,32 @@ fun SettingsScreen(
             },
         )
     }
+
+    pendingCurrencyCode?.let { targetCode ->
+        val oldSymbol = MoneyFormatter.currencySymbol(prefs.primaryCurrency).trim()
+        val newSymbol = MoneyFormatter.currencySymbol(targetCode).trim()
+        AlertDialog(
+            onDismissRequest = { pendingCurrencyCode = null },
+            title = { Text("Change Primary Currency?") },
+            text = {
+                Text(
+                    "Existing amounts will keep their numeric values (e.g., ${oldSymbol}100 becomes ${newSymbol}100) without FX conversion. Continue?",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.updateCurrency(targetCode)
+                        pendingCurrencyCode = null
+                    },
+                    shape = MaterialTheme.shapes.extraLarge,
+                ) { Text("Change Currency") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingCurrencyCode = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -273,6 +374,36 @@ private fun SettingsNavRow(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = FinLedgerTheme.colors.inkMuted48,
+        )
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = Spacing.sm),
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.inkMuted48)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
         )
     }
 }

@@ -178,6 +178,10 @@ class SocialRepository @Inject constructor(
         )
     }
 
+    suspend fun deleteSettlementById(id: Long) {
+        settlementDao.getById(id)?.let { deleteSettlement(it) }
+    }
+
     suspend fun restoreSettlement(settlement: SettlementEntity) {
         settlementDao.restore(settlement.id)
         settlement.linkedTransactionId?.let { txId ->

@@ -48,6 +48,7 @@ import com.finledger.domain.usecase.SplitCalculator
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.LocalUndoCoordinator
+import com.finledger.ui.screens.friends.FriendsViewModel
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -238,8 +239,10 @@ fun EventSummaryScreen(
     onBack: () -> Unit,
     onSettleSuggestion: (personId: Long, direction: SettlementDirection, amountPaise: Long, groupId: Long?, eventId: Long) -> Unit = { _, _, _, _, _ -> },
     viewModel: EventsViewModel = hiltViewModel(),
+    friendsViewModel: FriendsViewModel = hiltViewModel(),
 ) {
     val detail by viewModel.observeEventDetail(eventId).collectAsStateWithLifecycle()
+    val undoCoordinator = LocalUndoCoordinator.current
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -329,6 +332,12 @@ fun EventSummaryScreen(
                 items(detail.suggestions) { s ->
                     val involvesUser = s.fromPersonId == SplitCalculator.USER_PERSON_ID ||
                         s.toPersonId == SplitCalculator.USER_PERSON_ID
+                    val targetPersonId = if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) s.toPersonId else s.fromPersonId
+                    val direction = if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) {
+                        SettlementDirection.PAID
+                    } else {
+                        SettlementDirection.RECEIVED
+                    }
                     Card(
                         shape = MaterialTheme.shapes.large,
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -338,11 +347,21 @@ fun EventSummaryScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) {
-                                        onSettleSuggestion(s.toPersonId, SettlementDirection.PAID, s.amountPaise, detail.event?.groupId, eventId)
-                                    } else {
-                                        onSettleSuggestion(s.fromPersonId, SettlementDirection.RECEIVED, s.amountPaise, detail.event?.groupId, eventId)
-                                    }
+                                    friendsViewModel.quickSettle(
+                                        personId = targetPersonId,
+                                        amountPaise = s.amountPaise,
+                                        direction = direction,
+                                        groupId = detail.event?.groupId,
+                                        eventId = eventId,
+                                        onRecorded = { settlementId ->
+                                            undoCoordinator?.showUndo("Settlement recorded") {
+                                                friendsViewModel.deleteSettlementByIdDirect(settlementId)
+                                            }
+                                        },
+                                        onNoAccount = {
+                                            onSettleSuggestion(targetPersonId, direction, s.amountPaise, detail.event?.groupId, eventId)
+                                        },
+                                    )
                                 }
                         } else {
                             Modifier.fillMaxWidth()
@@ -362,17 +381,32 @@ fun EventSummaryScreen(
                                 )
                                 if (involvesUser) {
                                     Text(
-                                        text = "Tap to record settlement",
+                                        text = "Tap to settle in 1 tap",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
                                     )
                                 }
                             }
-                            Text(
-                                text = MoneyFormatter.format(s.amountPaise, detail.primaryCurrency),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = MoneyFormatter.format(s.amountPaise, detail.primaryCurrency),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                if (involvesUser) {
+                                    IconButton(
+                                        onClick = {
+                                            onSettleSuggestion(targetPersonId, direction, s.amountPaise, detail.event?.groupId, eventId)
+                                        },
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Edit,
+                                            contentDescription = "Edit settlement",
+                                            tint = FinLedgerTheme.colors.inkMuted48,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

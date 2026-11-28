@@ -1,10 +1,12 @@
 package com.finledger.domain.usecase
 
 import com.finledger.data.local.entity.*
+import com.finledger.data.repository.CategoryRepository
 import com.finledger.data.repository.CommitmentRepository
 import com.finledger.data.repository.SocialRepository
 import com.finledger.data.repository.TransactionRepository
 import com.finledger.data.repository.UserPreferencesRepository
+import com.finledger.domain.model.TransactionWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.util.Calendar
@@ -29,6 +31,13 @@ class CreateBillUseCase @Inject constructor(
     }
 }
 
+data class BillPaymentReceipt(
+    val billId: Long,
+    val paymentId: Long,
+    val transactionId: Long,
+    val previousDueDateMs: Long,
+)
+
 class MarkBillPaidUseCase @Inject constructor(
     private val commitmentRepository: CommitmentRepository,
     private val transactionRepository: TransactionRepository,
@@ -38,9 +47,17 @@ class MarkBillPaidUseCase @Inject constructor(
         actualAmountPaise: Long,
         accountId: Long,
         paidDateMs: Long,
-    ): Result<Long> {
+    ): Result<Long> = markPaidWithReceipt(bill, actualAmountPaise, accountId, paidDateMs).map { it.paymentId }
+
+    suspend fun markPaidWithReceipt(
+        bill: BillEntity,
+        actualAmountPaise: Long,
+        accountId: Long,
+        paidDateMs: Long,
+    ): Result<BillPaymentReceipt> {
         if (actualAmountPaise <= 0L) return Result.failure(IllegalArgumentException("Amount must be positive"))
         return runCatching {
+            val previousDue = bill.nextDueDateMs
             val txId = transactionRepository.insert(
                 TransactionEntity(
                     type = TransactionType.EXPENSE,
@@ -59,7 +76,7 @@ class MarkBillPaidUseCase @Inject constructor(
             val paymentId = commitmentRepository.insertBillPayment(
                 BillPaymentEntity(
                     billId = bill.id,
-                    dueDate = bill.nextDueDateMs,
+                    dueDate = previousDue,
                     paidDate = paidDateMs,
                     amount = actualAmountPaise,
                     isPaid = true,
@@ -67,9 +84,22 @@ class MarkBillPaidUseCase @Inject constructor(
                 )
             )
             // Advance next due date anchored to original dueDay (prevents month-end drift after Feb)
-            val nextDue = advanceDueDate(bill.nextDueDateMs, bill.frequency, bill.dueDay)
+            val nextDue = advanceDueDate(previousDue, bill.frequency, bill.dueDay)
             commitmentRepository.saveBill(bill.copy(nextDueDateMs = nextDue))
-            paymentId
+            BillPaymentReceipt(
+                billId = bill.id,
+                paymentId = paymentId,
+                transactionId = txId,
+                previousDueDateMs = previousDue,
+            )
+        }
+    }
+
+    suspend fun undoBillPayment(receipt: BillPaymentReceipt): Result<Unit> = runCatching {
+        commitmentRepository.softDeleteBillPayment(receipt.paymentId)
+        transactionRepository.softDelete(receipt.transactionId)
+        commitmentRepository.getBillById(receipt.billId)?.let { currentBill ->
+            commitmentRepository.saveBill(currentBill.copy(nextDueDateMs = receipt.previousDueDateMs))
         }
     }
 
@@ -251,6 +281,126 @@ class CreateSavingsGoalUseCase @Inject constructor(
         return runCatching {
             commitmentRepository.saveSavingsGoal(existing.copy(currentAmount = next, status = status))
             Unit
+        }
+    }
+}
+
+data class SuggestedBudget(
+    val categoryId: Long,
+    val categoryName: String,
+    val suggestedLimitPaise: Long,
+    val averageMonthlySpendPaise: Long,
+)
+
+class SuggestBudgetsFromHistoryUseCase @Inject constructor(
+    private val categoryRepository: CategoryRepository,
+    private val commitmentRepository: CommitmentRepository,
+    private val transactionRepository: TransactionRepository,
+    private val socialRepository: SocialRepository,
+) {
+    operator fun invoke(): Flow<List<SuggestedBudget>> = combine(
+        categoryRepository.observeByType(CategoryType.EXPENSE),
+        commitmentRepository.observeActiveBudgets(),
+        transactionRepository.observeAllTransactionsWithDetails(),
+        socialRepository.observeAllSharedExpenses(),
+        socialRepository.observeAllSplits(),
+    ) { categories, budgets, transactions, sharedExpenses, splits ->
+        computeSuggestions(
+            categories = categories,
+            existingBudgets = budgets,
+            transactions = transactions,
+            sharedExpenses = sharedExpenses,
+            splits = splits,
+            nowMs = System.currentTimeMillis(),
+        )
+    }
+
+    companion object {
+        private const val MONTHS_LOOKBACK = 3
+        private const val MIN_MONTHLY_PAISE = 100L // < 1 major currency unit
+
+        fun threeMonthWindowBounds(nowMs: Long = System.currentTimeMillis()): Pair<Long, Long> {
+            val startCal = Calendar.getInstance().apply {
+                timeInMillis = nowMs
+                add(Calendar.MONTH, -MONTHS_LOOKBACK)
+            }
+            return startCal.timeInMillis to nowMs
+        }
+
+        fun roundSuggestedLimit(averageMonthlyPaise: Long): Long {
+            val step = when {
+                averageMonthlyPaise >= 1_000_000L -> 50_000L // >= 10,000 units -> nearest 500
+                averageMonthlyPaise >= 100_000L -> 10_000L // >= 1,000 units -> nearest 100
+                averageMonthlyPaise >= 10_000L -> 5_000L // >= 100 units -> nearest 50
+                averageMonthlyPaise >= 1_000L -> 1_000L // >= 10 units -> nearest 10
+                else -> 100L // nearest 1 unit
+            }
+            return (((averageMonthlyPaise + (step / 2L)) / step) * step).coerceAtLeast(100L)
+        }
+
+        fun computeSuggestions(
+            categories: List<CategoryEntity>,
+            existingBudgets: List<BudgetEntity>,
+            transactions: List<TransactionWithDetails>,
+            sharedExpenses: List<SharedExpenseEntity>,
+            splits: List<ExpenseSplitEntity>,
+            nowMs: Long = System.currentTimeMillis(),
+        ): List<SuggestedBudget> {
+            val (startMs, endMs) = threeMonthWindowBounds(nowMs)
+            val activeExpenseCats = categories.associateBy { it.id }
+            val budgetedCategoryIds = existingBudgets
+                .filter { !it.isDeleted && it.isActive && it.period == BudgetPeriod.MONTHLY && it.categoryId != null }
+                .mapNotNull { it.categoryId }
+                .toSet()
+
+            val totalsByCategory = mutableMapOf<Long, Long>()
+            for (item in transactions) {
+                val tx = item.transaction
+                if (tx.isDeleted || tx.status == TransactionStatus.CANCELLED) continue
+                if (tx.date !in startMs..endMs) continue
+                val catId = tx.categoryId ?: continue
+                if (catId !in activeExpenseCats) continue
+
+                when (tx.type) {
+                    TransactionType.EXPENSE -> {
+                        totalsByCategory[catId] = (totalsByCategory[catId] ?: 0L) + tx.personalAmount
+                    }
+                    TransactionType.REFUND -> {
+                        totalsByCategory[catId] = (totalsByCategory[catId] ?: 0L) - tx.personalAmount
+                    }
+                    else -> Unit
+                }
+            }
+
+            val friendPaidShares = FriendPaidSharedExpenseHelper.resolveFriendPaidShares(
+                transactions,
+                sharedExpenses,
+                splits,
+            )
+            for (entry in friendPaidShares) {
+                val exp = entry.expense
+                if (exp.date !in startMs..endMs) continue
+                val catId = exp.categoryId ?: continue
+                if (catId !in activeExpenseCats) continue
+                totalsByCategory[catId] = (totalsByCategory[catId] ?: 0L) + entry.userSharePaise
+            }
+
+            return totalsByCategory.mapNotNull { (catId, rawTotal) ->
+                if (catId in budgetedCategoryIds) return@mapNotNull null
+                val normalizedTotal = rawTotal.coerceAtLeast(0L)
+                val avgMonthly = normalizedTotal / MONTHS_LOOKBACK
+                if (avgMonthly < MIN_MONTHLY_PAISE) return@mapNotNull null
+                val cat = activeExpenseCats[catId] ?: return@mapNotNull null
+                SuggestedBudget(
+                    categoryId = catId,
+                    categoryName = cat.name,
+                    suggestedLimitPaise = roundSuggestedLimit(avgMonthly),
+                    averageMonthlySpendPaise = avgMonthly,
+                )
+            }.sortedWith(
+                compareByDescending<SuggestedBudget> { it.suggestedLimitPaise }
+                    .thenBy { it.categoryName.lowercase() },
+            )
         }
     }
 }

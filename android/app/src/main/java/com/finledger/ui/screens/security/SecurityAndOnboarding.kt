@@ -3,6 +3,8 @@ package com.finledger.ui.screens.security
 import android.content.Context
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -21,6 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,6 +61,7 @@ import com.finledger.data.local.entity.AccountEntity
 import com.finledger.data.local.entity.AccountType
 import com.finledger.data.repository.AccountRepository
 import com.finledger.data.repository.UserPreferencesRepository
+import com.finledger.domain.model.ResolvedExperienceFlags
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.theme.FinLedgerTheme
@@ -183,6 +189,44 @@ class AppLockManager @Inject constructor() {
     }
 }
 
+data class OnboardingTrackingSelection(
+    val isSimpleMode: Boolean = true,
+    val trackShared: Boolean = true,
+    val trackLoans: Boolean = false,
+    val trackInvestments: Boolean = false,
+    val trackPlanning: Boolean = true,
+) {
+    fun toExperienceFlags(): ResolvedExperienceFlags = ResolvedExperienceFlags(
+        isSimpleMode = isSimpleMode,
+        trackSharedAndPeople = trackShared,
+        trackLoans = trackLoans,
+        trackInvestments = trackInvestments,
+        trackPlanning = trackPlanning,
+        showDashboardNetWorth = !isSimpleMode && trackInvestments,
+        showDashboardAlerts = true,
+    )
+
+    companion object {
+        fun forMode(simpleMode: Boolean): OnboardingTrackingSelection = if (simpleMode) {
+            OnboardingTrackingSelection(
+                isSimpleMode = true,
+                trackShared = true,
+                trackLoans = false,
+                trackInvestments = false,
+                trackPlanning = true,
+            )
+        } else {
+            OnboardingTrackingSelection(
+                isSimpleMode = false,
+                trackShared = true,
+                trackLoans = true,
+                trackInvestments = true,
+                trackPlanning = true,
+            )
+        }
+    }
+}
+
 @HiltViewModel
 class SecurityViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
@@ -228,11 +272,22 @@ class SecurityViewModel @Inject constructor(
         currency: String,
         firstAccountName: String,
         openingBalancePaise: Long,
+        trackingSelection: OnboardingTrackingSelection = OnboardingTrackingSelection(),
         onDone: () -> Unit,
     ) {
         viewModelScope.launch {
             if (userName.isNotBlank()) userPreferencesRepository.setUserName(userName)
             userPreferencesRepository.setPrimaryCurrency(currency)
+            val flags = trackingSelection.toExperienceFlags()
+            userPreferencesRepository.applyExperienceConfig(
+                isSimpleMode = flags.isSimpleMode,
+                trackSharedAndPeople = flags.trackSharedAndPeople,
+                trackLoans = flags.trackLoans,
+                trackInvestments = flags.trackInvestments,
+                trackPlanning = flags.trackPlanning,
+                showDashboardNetWorth = flags.showDashboardNetWorth,
+                showDashboardAlerts = flags.showDashboardAlerts,
+            )
             if (firstAccountName.isNotBlank()) {
                 accountRepository.saveAccount(
                     AccountEntity(
@@ -524,6 +579,7 @@ fun OnboardingFlow(
     var step by remember { mutableIntStateOf(0) }
     var userName by remember { mutableStateOf("Personal") }
     var currency by remember { mutableStateOf("INR") }
+    var trackingSelection by remember { mutableStateOf(OnboardingTrackingSelection.forMode(simpleMode = true)) }
     var accountName by remember { mutableStateOf("Main Bank Account") }
     var openingText by remember { mutableStateOf("") }
 
@@ -532,6 +588,7 @@ fun OnboardingFlow(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(Spacing.xl),
             verticalArrangement = Arrangement.Center,
         ) {
@@ -577,6 +634,97 @@ fun OnboardingFlow(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Continue") }
                 }
+                2 -> {
+                    Text("How will you use FinLedger?", style = MaterialTheme.typography.headlineMedium)
+                    Spacer(modifier = Modifier.height(Spacing.xs))
+                    Text(
+                        text = "You can change this anytime in Settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = FinLedgerTheme.colors.inkMuted48,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.md))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        FilterChip(
+                            selected = trackingSelection.isSimpleMode,
+                            onClick = { trackingSelection = OnboardingTrackingSelection.forMode(simpleMode = true) },
+                            label = { Text("Simple Mode (Recommended)") },
+                        )
+                        FilterChip(
+                            selected = !trackingSelection.isSimpleMode,
+                            onClick = { trackingSelection = OnboardingTrackingSelection.forMode(simpleMode = false) },
+                            label = { Text("Advanced Mode") },
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.xs))
+                    Text(
+                        text = if (trackingSelection.isSimpleMode) {
+                            "Focused Home screen, fast entry, and essential menus."
+                        } else {
+                            "All analytics, net worth, investments, and power tools visible."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = FinLedgerTheme.colors.inkMuted48,
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.md))
+                    Text("What do you want to track?", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(Spacing.xs))
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(vertical = Spacing.xs)) {
+                            OnboardingTrackingOptionRow(
+                                label = "Daily expenses & accounts",
+                                subtitle = "Always enabled",
+                                checked = true,
+                                enabled = false,
+                                onToggle = {},
+                            )
+                            OnboardingTrackingOptionRow(
+                                label = "Shared expenses with friends",
+                                subtitle = "Splits, groups, events & settlements",
+                                checked = trackingSelection.trackShared,
+                                onToggle = { trackingSelection = trackingSelection.copy(trackShared = it) },
+                            )
+                            OnboardingTrackingOptionRow(
+                                label = "Bills & budgets",
+                                subtitle = "Monthly spending limits, bills & goals",
+                                checked = trackingSelection.trackPlanning,
+                                onToggle = { trackingSelection = trackingSelection.copy(trackPlanning = it) },
+                            )
+                            OnboardingTrackingOptionRow(
+                                label = "Loans",
+                                subtitle = "Money lent, borrowed & EMI schedules",
+                                checked = trackingSelection.trackLoans,
+                                onToggle = { trackingSelection = trackingSelection.copy(trackLoans = it) },
+                            )
+                            OnboardingTrackingOptionRow(
+                                label = "Investments",
+                                subtitle = "Holdings, portfolio & net worth tracking",
+                                checked = trackingSelection.trackInvestments,
+                                onToggle = { trackingSelection = trackingSelection.copy(trackInvestments = it) },
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.lg))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        OutlinedButton(
+                            onClick = { step = 1 },
+                            shape = MaterialTheme.shapes.extraLarge,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Back") }
+                        Button(
+                            onClick = { step = 3 },
+                            shape = MaterialTheme.shapes.extraLarge,
+                            modifier = Modifier.weight(2f),
+                        ) { Text("Continue") }
+                    }
+                }
                 else -> {
                     Text("Add Your First Bank Account", style = MaterialTheme.typography.headlineMedium)
                     Spacer(modifier = Modifier.height(Spacing.xs))
@@ -598,21 +746,59 @@ fun OnboardingFlow(
                         currency = currency,
                     )
                     Spacer(modifier = Modifier.height(Spacing.xl))
-                    Button(
-                        onClick = {
-                            viewModel.completeOnboarding(
-                                userName = userName,
-                                currency = currency,
-                                firstAccountName = accountName,
-                                openingBalancePaise = MoneyFormatter.parseToPaise(openingText) ?: 0L,
-                                onDone = onComplete,
-                            )
-                        },
-                        shape = MaterialTheme.shapes.extraLarge,
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Finish Setup") }
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        OutlinedButton(
+                            onClick = { step = 2 },
+                            shape = MaterialTheme.shapes.extraLarge,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Back") }
+                        Button(
+                            onClick = {
+                                viewModel.completeOnboarding(
+                                    userName = userName,
+                                    currency = currency,
+                                    firstAccountName = accountName,
+                                    openingBalancePaise = MoneyFormatter.parseToPaise(openingText) ?: 0L,
+                                    trackingSelection = trackingSelection,
+                                    onDone = onComplete,
+                                )
+                            },
+                            shape = MaterialTheme.shapes.extraLarge,
+                            modifier = Modifier.weight(2f),
+                        ) { Text("Finish Setup") }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingTrackingOptionRow(
+    label: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onToggle: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (enabled) Modifier.clickable { onToggle(!checked) } else Modifier)
+            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = if (enabled) { { onToggle(it) } } else null,
+            enabled = enabled,
+        )
+        Column(modifier = Modifier.padding(start = Spacing.xs)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.inkMuted48)
         }
     }
 }

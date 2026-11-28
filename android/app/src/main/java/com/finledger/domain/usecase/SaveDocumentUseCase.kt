@@ -17,6 +17,38 @@ class SaveDocumentUseCase @Inject constructor(
 ) {
     fun observeAll(): Flow<List<DocumentEntity>> = documentDao.observeAll()
     fun observeById(id: Long): Flow<DocumentEntity?> = documentDao.observeById(id)
+    fun observeForTransaction(transactionId: Long): Flow<List<DocumentEntity>> =
+        documentDao.observeByLinkedEntity(ENTITY_TYPE_TRANSACTION, transactionId)
+
+    suspend fun linkExistingOrSaveNew(
+        transactionId: Long,
+        existingDocumentId: Long? = null,
+        uri: Uri? = null,
+        name: String = "",
+        type: DocumentType = DocumentType.RECEIPT,
+        notes: String = "",
+    ): Result<Long> {
+        if (existingDocumentId != null) {
+            return linkExistingToEntity(
+                documentDao = documentDao,
+                entityType = ENTITY_TYPE_TRANSACTION,
+                entityId = transactionId,
+                documentId = existingDocumentId,
+            )
+        }
+        val selectedUri = uri
+            ?: return Result.failure(IllegalArgumentException("Select a file or existing vault document"))
+        return importFromUri(
+            uri = selectedUri,
+            name = name,
+            type = type,
+            linkedEntityType = ENTITY_TYPE_TRANSACTION,
+            linkedEntityId = transactionId,
+            notes = notes,
+        )
+    }
+
+    suspend fun unlink(id: Long): Result<Unit> = unlinkFromEntity(documentDao, id)
 
     suspend fun importFromUri(
         uri: Uri,
@@ -59,6 +91,42 @@ class SaveDocumentUseCase @Inject constructor(
             if (idx >= 0 && cursor.moveToFirst()) return cursor.getString(idx)
         }
         return null
+    }
+
+    companion object {
+        const val ENTITY_TYPE_TRANSACTION = "transaction"
+
+        suspend fun linkExistingToEntity(
+            documentDao: DocumentDao,
+            entityType: String,
+            entityId: Long,
+            documentId: Long,
+        ): Result<Long> = runCatching {
+            val doc = documentDao.getByIdOnce(documentId)
+                ?: throw IllegalArgumentException("Document #$documentId not found")
+            documentDao.insert(
+                doc.copy(
+                    linkedEntityType = entityType,
+                    linkedEntityId = entityId,
+                    isDeleted = false,
+                )
+            )
+            doc.id
+        }
+
+        suspend fun unlinkFromEntity(
+            documentDao: DocumentDao,
+            documentId: Long,
+        ): Result<Unit> = runCatching {
+            val doc = documentDao.getByIdOnce(documentId) ?: return@runCatching
+            documentDao.insert(
+                doc.copy(
+                    linkedEntityType = "",
+                    linkedEntityId = null,
+                )
+            )
+            Unit
+        }
     }
 }
 

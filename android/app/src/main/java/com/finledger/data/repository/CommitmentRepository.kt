@@ -68,6 +68,8 @@ class CommitmentRepository @Inject constructor(
     }
 
     suspend fun insertBillPayment(payment: BillPaymentEntity): Long = billDao.insertPayment(payment)
+    suspend fun getBillPaymentById(paymentId: Long): BillPaymentEntity? = billDao.getPaymentById(paymentId)
+    suspend fun softDeleteBillPayment(paymentId: Long) = billDao.softDeletePayment(paymentId)
     suspend fun deleteBill(id: Long) = billDao.softDelete(id)
     suspend fun restoreBill(id: Long) = billDao.restore(id)
 

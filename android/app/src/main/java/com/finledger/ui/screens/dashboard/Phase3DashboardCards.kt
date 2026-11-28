@@ -9,12 +9,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.finledger.data.local.entity.BillEntity
@@ -23,6 +28,57 @@ import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
+
+@Composable
+fun TopAlertCard(
+    alert: DashboardTopAlert?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (alert == null) return
+    val accent = if (alert.isUrgent) FinLedgerTheme.colors.negative else FinLedgerTheme.colors.warning
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, if (alert.isUrgent) accent else MaterialTheme.colorScheme.outline),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.md)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.md),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.NotificationsActive,
+                contentDescription = null,
+                tint = accent,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = alert.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (alert.isUrgent) accent else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = alert.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FinLedgerTheme.colors.inkMuted48,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = FinLedgerTheme.colors.inkMuted48,
+            )
+        }
+    }
+}
 
 @Composable
 fun UpcomingBillsCard(

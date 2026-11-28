@@ -12,16 +12,26 @@ class GetTransactionsUseCase @Inject constructor(
 ) {
     operator fun invoke(filter: TransactionFilter = TransactionFilter()): Flow<List<TransactionWithDetails>> {
         return transactionRepository.observeAllTransactionsWithDetails().map { list ->
-            list.filter { item ->
+            filterTransactions(list, filter)
+        }
+    }
+
+    companion object {
+        fun filterTransactions(
+            list: List<TransactionWithDetails>,
+            filter: TransactionFilter,
+        ): List<TransactionWithDetails> {
+            val trimmedQuery = filter.searchQuery.trim()
+            return list.filter { item ->
                 val tx = item.transaction
-                val matchesQuery = filter.searchQuery.isBlank() || listOf(
+                val matchesQuery = trimmedQuery.isEmpty() || listOf(
                     tx.merchantOrPayee,
                     tx.description,
                     tx.notes,
                     tx.location,
                     item.accountName,
                     item.category?.name.orEmpty(),
-                ).any { it.contains(filter.searchQuery.trim(), ignoreCase = true) }
+                ).any { it.contains(trimmedQuery, ignoreCase = true) }
 
                 val matchesType = filter.type == null || tx.type == filter.type
                 val matchesCategory = filter.categoryId == null || tx.categoryId == filter.categoryId
@@ -30,10 +40,16 @@ class GetTransactionsUseCase @Inject constructor(
                     tx.toAccountId == filter.accountId
                 val matchesStart = filter.startDateMs == null || tx.date >= filter.startDateMs
                 val matchesEnd = filter.endDateMs == null || tx.date <= filter.endDateMs
+                val matchesShared = !filter.onlyShared || !tx.isPersonal || tx.sharedExpenseId != null
 
-                matchesQuery && matchesType && matchesCategory && matchesAccount && matchesStart && matchesEnd
+                matchesQuery &&
+                    matchesType &&
+                    matchesCategory &&
+                    matchesAccount &&
+                    matchesStart &&
+                    matchesEnd &&
+                    matchesShared
             }
         }
     }
 }
-

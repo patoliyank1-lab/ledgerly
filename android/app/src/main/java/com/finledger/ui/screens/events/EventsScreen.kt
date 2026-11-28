@@ -70,62 +70,77 @@ fun EventsScreen(
             }
         },
     ) { padding ->
-        if (state.events.isEmpty()) {
-            EmptyStateView(
-                icon = Icons.Outlined.Event,
-                title = "No events yet",
-                subtitle = "Create events for trips, dinners, parties, or group celebrations.",
-                actionLabel = "Create Event",
-                onAction = onCreateEvent,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-            ) {
-                items(state.events, key = { it.event.id }) { item ->
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        EventsContent(
+            onCreateEvent = onCreateEvent,
+            onOpenEvent = onOpenEvent,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            viewModel = viewModel,
+        )
+    }
+}
+
+@Composable
+fun EventsContent(
+    onCreateEvent: () -> Unit,
+    onOpenEvent: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: EventsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    if (state.events.isEmpty()) {
+        EmptyStateView(
+            icon = Icons.Outlined.Event,
+            title = "No events yet",
+            subtitle = "Create events for trips, dinners, parties, or group celebrations.",
+            actionLabel = "Create Event",
+            onAction = onCreateEvent,
+            modifier = modifier,
+        )
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+        ) {
+            items(state.events, key = { it.event.id }) { item ->
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenEvent(item.event.id) },
+                ) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onOpenEvent(item.event.id) },
+                            .padding(Spacing.md),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(Spacing.md),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(item.event.name, style = MaterialTheme.typography.bodyLarge)
-                                val sub = buildList {
-                                    add(DateFormatter.formatDate(item.event.startDate))
-                                    item.groupName?.let { add(it) }
-                                    add("${item.participantCount} people")
-                                }.joinToString(" · ")
-                                Text(sub, style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.inkMuted48)
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = MoneyFormatter.format(item.totalSpentPaise, state.primaryCurrency),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                                Text(
-                                    text = item.event.status.name,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = FinLedgerTheme.colors.inkMuted48,
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(item.event.name, style = MaterialTheme.typography.bodyLarge)
+                            val sub = buildList {
+                                add(DateFormatter.formatDate(item.event.startDate))
+                                item.groupName?.let { add(it) }
+                                add("${item.participantCount} people")
+                            }.joinToString(" · ")
+                            Text(sub, style = MaterialTheme.typography.bodySmall, color = FinLedgerTheme.colors.inkMuted48)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = MoneyFormatter.format(item.totalSpentPaise, state.primaryCurrency),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                text = item.event.status.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = FinLedgerTheme.colors.inkMuted48,
+                            )
                         }
                     }
                 }

@@ -69,61 +69,76 @@ fun GroupsScreen(
             }
         },
     ) { padding ->
-        if (state.groups.isEmpty()) {
-            EmptyStateView(
-                icon = Icons.Outlined.Groups,
-                title = "No groups yet",
-                subtitle = "Create a group for roommates, friends, or trips to track shared expenses.",
-                actionLabel = "Create Group",
-                onAction = onCreateGroup,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-            ) {
-                items(state.groups, key = { it.group.id }) { item ->
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        GroupsContent(
+            onCreateGroup = onCreateGroup,
+            onOpenGroupDetail = onOpenGroupDetail,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            viewModel = viewModel,
+        )
+    }
+}
+
+@Composable
+fun GroupsContent(
+    onCreateGroup: () -> Unit,
+    onOpenGroupDetail: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: GroupsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    if (state.groups.isEmpty()) {
+        EmptyStateView(
+            icon = Icons.Outlined.Groups,
+            title = "No groups yet",
+            subtitle = "Create a group for roommates, friends, or trips to track shared expenses.",
+            actionLabel = "Create Group",
+            onAction = onCreateGroup,
+            modifier = modifier,
+        )
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+        ) {
+            items(state.groups, key = { it.group.id }) { item ->
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenGroupDetail(item.group.id) },
+                ) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onOpenGroupDetail(item.group.id) },
+                            .padding(Spacing.md),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(Spacing.md),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(item.group.name, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    text = "${item.memberIds.size + 1} members (incl. you)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = FinLedgerTheme.colors.inkMuted48,
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = MoneyFormatter.format(item.totalSpentPaise, item.group.currency),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                                Text(
-                                    text = "Total spent",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = FinLedgerTheme.colors.inkMuted48,
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(item.group.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "${item.memberIds.size + 1} members (incl. you)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = FinLedgerTheme.colors.inkMuted48,
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = MoneyFormatter.format(item.totalSpentPaise, item.group.currency),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                text = "Total spent",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = FinLedgerTheme.colors.inkMuted48,
+                            )
                         }
                     }
                 }

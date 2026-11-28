@@ -50,6 +50,7 @@ import com.finledger.domain.usecase.SplitCalculator
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.LocalUndoCoordinator
+import com.finledger.ui.screens.friends.FriendsViewModel
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -63,6 +64,7 @@ fun GroupDetailScreen(
     onAddSharedExpense: (groupId: Long, eventId: Long?) -> Unit,
     onSettleSuggestion: (personId: Long, direction: SettlementDirection, amountPaise: Long, groupId: Long) -> Unit = { _, _, _, _ -> },
     viewModel: GroupsViewModel = hiltViewModel(),
+    friendsViewModel: FriendsViewModel = hiltViewModel(),
 ) {
     val detail by viewModel.observeGroupDetail(groupId).collectAsStateWithLifecycle()
     var tabIndex by remember { mutableIntStateOf(0) }
@@ -181,6 +183,20 @@ fun GroupDetailScreen(
                     GroupMemberBalancesTab(
                         detail = detail,
                         personName = { id -> viewModel.personName(id, detail.members) },
+                        onQuickSettle = { personId, dir, amt ->
+                            friendsViewModel.quickSettle(
+                                personId = personId,
+                                amountPaise = amt,
+                                direction = dir,
+                                groupId = groupId,
+                                onRecorded = { settlementId ->
+                                    undoCoordinator?.showUndo("Settlement recorded") {
+                                        friendsViewModel.deleteSettlementByIdDirect(settlementId)
+                                    }
+                                },
+                                onNoAccount = { onSettleSuggestion(personId, dir, amt, groupId) },
+                            )
+                        },
                         onSettleSuggestion = { personId, dir, amt ->
                             onSettleSuggestion(personId, dir, amt, groupId)
                         },
@@ -285,6 +301,7 @@ fun GroupDetailScreen(
 fun GroupMemberBalancesTab(
     detail: GroupDetailUiState,
     personName: (Long) -> String,
+    onQuickSettle: (personId: Long, direction: SettlementDirection, amountPaise: Long) -> Unit = { _, _, _ -> },
     onSettleSuggestion: (personId: Long, direction: SettlementDirection, amountPaise: Long) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
@@ -343,6 +360,12 @@ fun GroupMemberBalancesTab(
             items(detail.suggestions) { s ->
                 val involvesUser = s.fromPersonId == SplitCalculator.USER_PERSON_ID ||
                     s.toPersonId == SplitCalculator.USER_PERSON_ID
+                val targetPersonId = if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) s.toPersonId else s.fromPersonId
+                val direction = if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) {
+                    SettlementDirection.PAID
+                } else {
+                    SettlementDirection.RECEIVED
+                }
                 Card(
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -351,13 +374,7 @@ fun GroupMemberBalancesTab(
                     modifier = if (involvesUser) {
                         Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                if (s.fromPersonId == SplitCalculator.USER_PERSON_ID) {
-                                    onSettleSuggestion(s.toPersonId, SettlementDirection.PAID, s.amountPaise)
-                                } else {
-                                    onSettleSuggestion(s.fromPersonId, SettlementDirection.RECEIVED, s.amountPaise)
-                                }
-                            }
+                            .clickable { onQuickSettle(targetPersonId, direction, s.amountPaise) }
                     } else {
                         Modifier.fillMaxWidth()
                     },
@@ -376,17 +393,30 @@ fun GroupMemberBalancesTab(
                             )
                             if (involvesUser) {
                                 Text(
-                                    text = "Tap to record settlement",
+                                    text = "Tap to settle in 1 tap",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
-                        Text(
-                            text = MoneyFormatter.format(s.amountPaise, detail.primaryCurrency),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = MoneyFormatter.format(s.amountPaise, detail.primaryCurrency),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            if (involvesUser) {
+                                IconButton(
+                                    onClick = { onSettleSuggestion(targetPersonId, direction, s.amountPaise) },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Edit,
+                                        contentDescription = "Edit settlement",
+                                        tint = FinLedgerTheme.colors.inkMuted48,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

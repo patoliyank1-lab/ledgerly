@@ -168,11 +168,46 @@ fun PersonDetailScreen(
                             color = MaterialTheme.colorScheme.inverseOnSurface,
                         )
                         Spacer(modifier = Modifier.height(Spacing.md))
-                        Button(
-                            onClick = { onSettleUp(personId) },
-                            shape = MaterialTheme.shapes.extraLarge,
-                        ) {
-                            Text("Record Settlement")
+                        if (net != 0L) {
+                            val fullAmount = kotlin.math.abs(net)
+                            val settleDirection = if (net > 0L) {
+                                SettlementDirection.RECEIVED
+                            } else {
+                                SettlementDirection.PAID
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Button(
+                                    onClick = {
+                                        viewModel.quickSettle(
+                                            personId = personId,
+                                            amountPaise = fullAmount,
+                                            direction = settleDirection,
+                                            onRecorded = { settlementId ->
+                                                undoCoordinator?.showUndo("Settlement recorded") {
+                                                    viewModel.deleteSettlementByIdDirect(settlementId)
+                                                }
+                                            },
+                                            onNoAccount = { onSettleUp(personId) },
+                                        )
+                                    },
+                                    shape = MaterialTheme.shapes.extraLarge,
+                                ) {
+                                    Text("Settle full amount (${MoneyFormatter.format(fullAmount, state.primaryCurrency)})")
+                                }
+                                TextButton(onClick = { onSettleUp(personId) }) {
+                                    Text("Edit / Partial", color = FinLedgerTheme.colors.skyLinkBlue)
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = { onSettleUp(personId) },
+                                shape = MaterialTheme.shapes.extraLarge,
+                            ) {
+                                Text("Record Settlement")
+                            }
                         }
                     }
                 }

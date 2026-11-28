@@ -9,6 +9,8 @@ sealed class Screen(val route: String) {
     data object Transactions : Screen("transactions")
     data object Accounts : Screen("accounts")
     data object Friends : Screen("friends")
+    data object Plan : Screen("plan")
+    data object People : Screen("people")
     data object More : Screen("more")
 
     // Transaction flows (Phase 1)
@@ -140,6 +142,7 @@ sealed class Screen(val route: String) {
     data object DocumentViewer : Screen("document_viewer/{documentId}") {
         fun createRoute(documentId: Long) = "document_viewer/$documentId"
     }
+    data object Recovery : Screen("recovery")
     data object Trash : Screen("trash")
     data object AuditHistory : Screen("audit_history")
     data object Archive : Screen("archive")

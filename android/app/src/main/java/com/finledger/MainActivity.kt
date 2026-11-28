@@ -39,6 +39,8 @@ import com.finledger.ui.components.UndoSnackbarEffect
 import com.finledger.ui.navigation.FinLedgerBottomBar
 import com.finledger.ui.navigation.FinLedgerNavHost
 import com.finledger.ui.navigation.PrimaryBottomNavItems
+import com.finledger.ui.navigation.Screen
+import com.finledger.ui.navigation.visibleBottomNavItems
 import com.finledger.ui.screens.security.AppLockManager
 import com.finledger.ui.screens.security.BiometricHelper
 import com.finledger.ui.screens.security.LocalSuppressAppLock
@@ -154,7 +156,7 @@ class MainActivity : FragmentActivity() {
                             OnboardingFlow(onComplete = {})
                         }
                         else -> {
-                            FinLedgerAppShell()
+                            FinLedgerAppShell(preferences = prefs)
                         }
                     }
                 }
@@ -164,11 +166,14 @@ class MainActivity : FragmentActivity() {
 }
 
 @Composable
-fun FinLedgerAppShell() {
+fun FinLedgerAppShell(
+    preferences: UserPreferences = UserPreferences(),
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val showBottomBar = PrimaryBottomNavItems.any { it.route == currentRoute }
+    val bottomNavItems = remember(preferences) { visibleBottomNavItems(preferences) }
+    val showBottomBar = PrimaryBottomNavItems.any { !it.isQuickAddAction && it.route == currentRoute }
     val undoCoordinator = remember { UndoCoordinator() }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -191,13 +196,20 @@ fun FinLedgerAppShell() {
                 if (showBottomBar) {
                     FinLedgerBottomBar(
                         currentRoute = currentRoute,
+                        items = bottomNavItems,
                         onSelectRoute = { route ->
-                            navController.navigate(route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            if (route.startsWith("quick_add")) {
+                                navController.navigate(Screen.QuickAdd.createRoute("EXPENSE")) {
+                                    launchSingleTop = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
+                            } else {
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
                         },
                     )
@@ -206,6 +218,7 @@ fun FinLedgerAppShell() {
         ) { innerPadding ->
             FinLedgerNavHost(
                 navController = navController,
+                preferences = preferences,
                 modifier = Modifier
                     .padding(innerPadding)
                     .consumeWindowInsets(innerPadding),

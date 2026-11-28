@@ -12,9 +12,11 @@ import com.finledger.data.repository.CategoryRepository
 import com.finledger.data.repository.CommitmentRepository
 import com.finledger.data.repository.UserPreferencesRepository
 import com.finledger.domain.model.AccountWithBalance
+import com.finledger.domain.usecase.BillPaymentReceipt
 import com.finledger.domain.usecase.CreateBillUseCase
 import com.finledger.domain.usecase.GetAccountsUseCase
 import com.finledger.domain.usecase.MarkBillPaidUseCase
+import com.finledger.ui.screens.transactions.TransactionsViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +32,7 @@ data class BillsUiState(
     val accounts: List<AccountWithBalance> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
     val primaryCurrency: String = "INR",
+    val lastUsedAccountId: Long? = null,
     val errorMessage: String? = null,
 )
 
@@ -40,7 +43,7 @@ class BillsViewModel @Inject constructor(
     private val markBillPaidUseCase: MarkBillPaidUseCase,
     getAccountsUseCase: GetAccountsUseCase,
     categoryRepository: CategoryRepository,
-    userPreferencesRepository: UserPreferencesRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _error = MutableStateFlow<String?>(null)
@@ -70,6 +73,7 @@ class BillsViewModel @Inject constructor(
             accounts = accounts,
             categories = categories,
             primaryCurrency = prefs.primaryCurrency,
+            lastUsedAccountId = prefs.lastUsedAccountId,
             errorMessage = err,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BillsUiState())
@@ -115,15 +119,44 @@ class BillsViewModel @Inject constructor(
         }
     }
 
-    fun markBillPaid(bill: BillEntity, actualAmountPaise: Long, accountId: Long, onSuccess: () -> Unit = {}) {
+    fun quickPayBill(
+        bill: BillEntity,
+        onPaid: (BillPaymentReceipt) -> Unit,
+        onNeedsDialog: () -> Unit,
+    ) {
+        val current = uiState.value
+        val resolvedAccountId = resolveBillPayAccountId(bill, current.accounts, current.lastUsedAccountId)
+        if (bill.expectedAmount <= 0L || resolvedAccountId == null) {
+            onNeedsDialog()
+            return
+        }
+        markBillPaid(
+            bill = bill,
+            actualAmountPaise = bill.expectedAmount,
+            accountId = resolvedAccountId,
+            onSuccess = onPaid,
+        )
+    }
+
+    fun markBillPaid(
+        bill: BillEntity,
+        actualAmountPaise: Long,
+        accountId: Long,
+        onSuccess: (BillPaymentReceipt) -> Unit = {},
+    ) {
         viewModelScope.launch {
-            markBillPaidUseCase(bill, actualAmountPaise, accountId, System.currentTimeMillis())
-                .onSuccess {
+            markBillPaidUseCase.markPaidWithReceipt(bill, actualAmountPaise, accountId, System.currentTimeMillis())
+                .onSuccess { receipt ->
                     _error.value = null
-                    onSuccess()
+                    userPreferencesRepository.setLastUsedAccountId(accountId)
+                    onSuccess(receipt)
                 }
                 .onFailure { _error.value = it.message ?: "Failed to record bill payment" }
         }
+    }
+
+    suspend fun undoBillPaymentDirect(receipt: BillPaymentReceipt) {
+        markBillPaidUseCase.undoBillPayment(receipt)
     }
 
     fun deleteBill(id: Long) {
@@ -136,5 +169,19 @@ class BillsViewModel @Inject constructor(
 
     fun clearError() {
         _error.value = null
+    }
+
+    companion object {
+        fun resolveBillPayAccountId(
+            bill: BillEntity,
+            accounts: List<AccountWithBalance>,
+            lastUsedAccountId: Long?,
+        ): Long? {
+            val preferredBillAccount = bill.paymentAccountId
+            if (preferredBillAccount != null && accounts.any { it.account.id == preferredBillAccount }) {
+                return preferredBillAccount
+            }
+            return TransactionsViewModel.resolveDefaultAccountId(accounts, lastUsedAccountId)
+        }
     }
 }

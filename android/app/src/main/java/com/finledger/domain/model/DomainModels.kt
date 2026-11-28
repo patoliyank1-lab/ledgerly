@@ -48,6 +48,7 @@ data class TransactionFilter(
     val accountId: Long? = null,
     val startDateMs: Long? = null,
     val endDateMs: Long? = null,
+    val onlyShared: Boolean = false,
 )
 
 data class TransactionWithDetails(
@@ -121,7 +122,99 @@ data class UserPreferences(
     val autoBackupEnabled: Boolean = false,
     val lastUsedAccountId: Long? = null,
     val quickTemplates: List<QuickTransactionTemplate> = emptyList(),
+    val isSimpleMode: Boolean = true,
+    val trackSharedAndPeople: Boolean = true,
+    val trackLoans: Boolean = false,
+    val trackInvestments: Boolean = false,
+    val trackPlanning: Boolean = true,
+    val showDashboardNetWorth: Boolean = false,
+    val showDashboardAlerts: Boolean = true,
+    val checklistDismissed: Boolean = false,
+    val backupReminderSnoozedUntilMs: Long = 0L,
 )
+
+data class SetupChecklistState(
+    val onboardingCompleted: Boolean = false,
+    val hasAnyTransaction: Boolean = false,
+    val hasAnyBudget: Boolean = false,
+    val hasBackupOrAutoBackupEnabled: Boolean = false,
+    val isDismissed: Boolean = false,
+) {
+    val completedCount: Int
+        get() = listOf(hasAnyTransaction, hasAnyBudget, hasBackupOrAutoBackupEnabled).count { it }
+
+    val allCompleted: Boolean
+        get() = hasAnyTransaction && hasAnyBudget && hasBackupOrAutoBackupEnabled
+
+    val shouldShowFirstRunCta: Boolean
+        get() = onboardingCompleted && !hasAnyTransaction
+
+    val shouldShowChecklist: Boolean
+        get() = onboardingCompleted && !isDismissed && !allCompleted
+}
+
+data class ResolvedExperienceFlags(
+    val isSimpleMode: Boolean,
+    val trackSharedAndPeople: Boolean,
+    val trackLoans: Boolean,
+    val trackInvestments: Boolean,
+    val trackPlanning: Boolean,
+    val showDashboardNetWorth: Boolean,
+    val showDashboardAlerts: Boolean,
+)
+
+object AppExperienceConfig {
+    fun resolve(
+        onboardingCompleted: Boolean,
+        isSimpleModeStored: Boolean?,
+        trackSharedAndPeopleStored: Boolean?,
+        trackLoansStored: Boolean?,
+        trackInvestmentsStored: Boolean?,
+        trackPlanningStored: Boolean?,
+        showDashboardNetWorthStored: Boolean?,
+        showDashboardAlertsStored: Boolean?,
+    ): ResolvedExperienceFlags {
+        // Existing users upgrading with onboardingCompleted == true keep full Advanced visibility
+        val isSimple = isSimpleModeStored ?: !onboardingCompleted
+        return ResolvedExperienceFlags(
+            isSimpleMode = isSimple,
+            trackSharedAndPeople = trackSharedAndPeopleStored ?: true,
+            trackLoans = trackLoansStored ?: !isSimple,
+            trackInvestments = trackInvestmentsStored ?: !isSimple,
+            trackPlanning = trackPlanningStored ?: true,
+            showDashboardNetWorth = showDashboardNetWorthStored ?: !isSimple,
+            showDashboardAlerts = showDashboardAlertsStored ?: true,
+        )
+    }
+
+    fun applySimplePreset(
+        prefs: UserPreferences = UserPreferences(),
+        trackSharedAndPeople: Boolean = true,
+        trackLoans: Boolean = false,
+        trackInvestments: Boolean = false,
+        trackPlanning: Boolean = true,
+        showDashboardNetWorth: Boolean = false,
+        showDashboardAlerts: Boolean = true,
+    ): UserPreferences = prefs.copy(
+        isSimpleMode = true,
+        trackSharedAndPeople = trackSharedAndPeople,
+        trackLoans = trackLoans,
+        trackInvestments = trackInvestments,
+        trackPlanning = trackPlanning,
+        showDashboardNetWorth = showDashboardNetWorth,
+        showDashboardAlerts = showDashboardAlerts,
+    )
+
+    fun applyAdvancedPreset(prefs: UserPreferences = UserPreferences()): UserPreferences = prefs.copy(
+        isSimpleMode = false,
+        trackSharedAndPeople = true,
+        trackLoans = true,
+        trackInvestments = true,
+        trackPlanning = true,
+        showDashboardNetWorth = true,
+        showDashboardAlerts = true,
+    )
+}
 
 /**
  * Pure financial balance calculator enforcing all rules in FINANCIAL_RULES.md.

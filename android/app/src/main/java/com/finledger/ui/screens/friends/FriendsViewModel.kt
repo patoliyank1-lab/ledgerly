@@ -11,11 +11,14 @@ import com.finledger.data.repository.SocialRepository
 import com.finledger.data.repository.UserPreferencesRepository
 import com.finledger.domain.model.AccountWithBalance
 import com.finledger.domain.usecase.AddPersonUseCase
+import com.finledger.domain.usecase.AgingBucketPerson
 import com.finledger.domain.usecase.ComputePersonBalanceUseCase
 import com.finledger.domain.usecase.GetAccountsUseCase
+import com.finledger.domain.usecase.GetAgingReportUseCase
 import com.finledger.domain.usecase.PersonBalanceSummary
 import com.finledger.domain.usecase.PersonLedgerEntry
 import com.finledger.domain.usecase.RecordSettlementUseCase
+import com.finledger.ui.screens.transactions.TransactionsViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,9 +34,11 @@ data class FriendsUiState(
     val accounts: List<AccountWithBalance> = emptyList(),
     val groups: List<GroupEntity> = emptyList(),
     val events: List<EventEntity> = emptyList(),
+    val agingReport: List<AgingBucketPerson> = emptyList(),
     val totalToReceive: Long = 0L,
     val totalToPay: Long = 0L,
     val primaryCurrency: String = "INR",
+    val lastUsedAccountId: Long? = null,
     val errorMessage: String? = null,
 )
 
@@ -44,7 +49,8 @@ class FriendsViewModel @Inject constructor(
     private val recordSettlementUseCase: RecordSettlementUseCase,
     private val socialRepository: SocialRepository,
     getAccountsUseCase: GetAccountsUseCase,
-    userPreferencesRepository: UserPreferencesRepository,
+    getAgingReportUseCase: GetAgingReportUseCase,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _error = MutableStateFlow<String?>(null)
@@ -57,6 +63,7 @@ class FriendsViewModel @Inject constructor(
         getAccountsUseCase(),
         socialRepository.observeActiveGroups(),
         socialRepository.observeAllEvents(),
+        getAgingReportUseCase(),
         userPreferencesRepository.preferences,
         _error,
     ) { values ->
@@ -68,8 +75,10 @@ class FriendsViewModel @Inject constructor(
         val groups = values[2] as List<GroupEntity>
         @Suppress("UNCHECKED_CAST")
         val events = values[3] as List<EventEntity>
-        val prefs = values[4] as com.finledger.domain.model.UserPreferences
-        val err = values[5] as String?
+        @Suppress("UNCHECKED_CAST")
+        val aging = values[4] as List<AgingBucketPerson>
+        val prefs = values[5] as com.finledger.domain.model.UserPreferences
+        val err = values[6] as String?
         val receive = balances.filter { it.netBalancePaise > 0 }.sumOf { it.netBalancePaise }
         val pay = balances.filter { it.netBalancePaise < 0 }.sumOf { -it.netBalancePaise }
         FriendsUiState(
@@ -77,9 +86,11 @@ class FriendsViewModel @Inject constructor(
             accounts = accounts,
             groups = groups,
             events = events,
+            agingReport = aging,
             totalToReceive = receive,
             totalToPay = pay,
             primaryCurrency = prefs.primaryCurrency,
+            lastUsedAccountId = prefs.lastUsedAccountId,
             errorMessage = err,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FriendsUiState())
@@ -145,8 +156,49 @@ class FriendsViewModel @Inject constructor(
                 eventId = eventId,
             ).onSuccess {
                 _error.value = null
+                if (accountId != null) {
+                    userPreferencesRepository.setLastUsedAccountId(accountId)
+                }
                 onSuccess()
             }.onFailure { _error.value = it.message }
+        }
+    }
+
+    fun quickSettle(
+        personId: Long,
+        amountPaise: Long,
+        direction: SettlementDirection,
+        groupId: Long? = null,
+        eventId: Long? = null,
+        onRecorded: (settlementId: Long) -> Unit,
+        onNoAccount: () -> Unit = {},
+    ) {
+        val current = uiState.value
+        val accountId = TransactionsViewModel.resolveDefaultAccountId(
+            accounts = current.accounts,
+            preferredId = current.lastUsedAccountId,
+        )
+        if (accountId == null) {
+            _error.value = "Create an account first to record settlement"
+            onNoAccount()
+            return
+        }
+        viewModelScope.launch {
+            executeQuickSettle(
+                personId = personId,
+                amountPaise = amountPaise,
+                direction = direction,
+                accountId = accountId,
+                groupId = groupId,
+                eventId = eventId,
+                recordSettlementUseCase = recordSettlementUseCase,
+            ).onSuccess { settlementId ->
+                _error.value = null
+                userPreferencesRepository.setLastUsedAccountId(accountId)
+                onRecorded(settlementId)
+            }.onFailure { err ->
+                _error.value = err.message
+            }
         }
     }
 
@@ -180,6 +232,31 @@ class FriendsViewModel @Inject constructor(
 
     suspend fun restoreSettlementDirect(settlement: SettlementEntity) {
         socialRepository.restoreSettlement(settlement)
+    }
+
+    suspend fun deleteSettlementByIdDirect(settlementId: Long) {
+        socialRepository.deleteSettlementById(settlementId)
+    }
+
+    companion object {
+        suspend fun executeQuickSettle(
+            personId: Long,
+            amountPaise: Long,
+            direction: SettlementDirection,
+            accountId: Long,
+            groupId: Long? = null,
+            eventId: Long? = null,
+            recordSettlementUseCase: RecordSettlementUseCase,
+            nowMs: Long = System.currentTimeMillis(),
+        ): Result<Long> = recordSettlementUseCase(
+            personId = personId,
+            amountPaise = amountPaise,
+            direction = direction,
+            dateMs = nowMs,
+            accountId = accountId,
+            groupId = groupId,
+            eventId = eventId,
+        )
     }
 }
 

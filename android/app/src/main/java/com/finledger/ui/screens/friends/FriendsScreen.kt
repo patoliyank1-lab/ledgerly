@@ -50,18 +50,11 @@ import com.finledger.ui.theme.Spacing
 @Composable
 fun FriendsScreen(
     onOpenPersonDetail: (Long) -> Unit,
+    onBack: (() -> Unit)? = null,
     viewModel: FriendsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(state.errorMessage) {
-        state.errorMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearError()
-        }
-    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -69,6 +62,13 @@ fun FriendsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Friends & Contacts", style = MaterialTheme.typography.headlineMedium) },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -82,48 +82,74 @@ fun FriendsScreen(
             }
         },
     ) { padding ->
-        if (state.balances.isEmpty()) {
-            EmptyStateView(
-                icon = Icons.Outlined.People,
-                title = "No friends added yet",
-                subtitle = "Add friends to split expenses, track lending, and view consolidated balances.",
-                actionLabel = "Add Contact",
-                onAction = { showAddSheet = true },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(bottom = Spacing.xxl),
-            ) {
-                item {
-                    BalancesSummaryTile(
-                        toReceive = state.totalToReceive,
-                        toPay = state.totalToPay,
-                        currency = state.primaryCurrency,
-                    )
-                }
-                item {
-                    Spacer(modifier = Modifier.height(Spacing.md))
-                }
-                items(state.balances, key = { it.person.id }) { summary ->
-                    PersonBalanceRow(
-                        summary = summary,
-                        currency = state.primaryCurrency,
-                        onClick = { onOpenPersonDetail(summary.person.id) },
-                    )
-                }
+        FriendsContent(
+            onOpenPersonDetail = onOpenPersonDetail,
+            showAddSheet = showAddSheet,
+            onShowAddSheetChange = { showAddSheet = it },
+            snackbarHostState = snackbarHostState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            viewModel = viewModel,
+        )
+    }
+}
+
+@Composable
+fun FriendsContent(
+    onOpenPersonDetail: (Long) -> Unit,
+    showAddSheet: Boolean,
+    onShowAddSheetChange: (Boolean) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+    viewModel: FriendsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
+
+    if (state.balances.isEmpty()) {
+        EmptyStateView(
+            icon = Icons.Outlined.People,
+            title = "No friends added yet",
+            subtitle = "Add friends to split expenses, track lending, and view consolidated balances.",
+            actionLabel = "Add Contact",
+            onAction = { onShowAddSheetChange(true) },
+            modifier = modifier,
+        )
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(bottom = Spacing.xxl),
+        ) {
+            item {
+                BalancesSummaryTile(
+                    toReceive = state.totalToReceive,
+                    toPay = state.totalToPay,
+                    currency = state.primaryCurrency,
+                )
+            }
+            item {
+                Spacer(modifier = Modifier.height(Spacing.md))
+            }
+            items(state.balances, key = { it.person.id }) { summary ->
+                PersonBalanceRow(
+                    summary = summary,
+                    currency = state.primaryCurrency,
+                    onClick = { onOpenPersonDetail(summary.person.id) },
+                )
             }
         }
     }
 
     if (showAddSheet) {
         AddEditPersonSheet(
-            onDismiss = { showAddSheet = false },
+            onDismiss = { onShowAddSheetChange(false) },
             onSave = { name, phone, email, rel, notes ->
                 viewModel.savePerson(
                     name = name,
@@ -131,7 +157,7 @@ fun FriendsScreen(
                     email = email,
                     relationship = rel,
                     notes = notes,
-                    onSaved = { showAddSheet = false },
+                    onSaved = { onShowAddSheetChange(false) },
                 )
             },
         )

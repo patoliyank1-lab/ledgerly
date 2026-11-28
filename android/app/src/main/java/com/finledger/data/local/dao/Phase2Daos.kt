@@ -226,6 +226,9 @@ interface SettlementDao {
     @Query("SELECT * FROM settlements WHERE isDeleted = 0 ORDER BY date DESC, createdAt DESC")
     fun observeAll(): Flow<List<SettlementEntity>>
 
+    @Query("SELECT * FROM settlements WHERE id = :id")
+    suspend fun getById(id: Long): SettlementEntity?
+
     @Query("SELECT * FROM settlements WHERE isDeleted = 0 AND personId = :personId ORDER BY date DESC")
     fun observeByPerson(personId: Long): Flow<List<SettlementEntity>>
 

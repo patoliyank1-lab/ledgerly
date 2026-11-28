@@ -21,7 +21,6 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,8 +59,31 @@ import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.CategoryPickerGrid
 import com.finledger.ui.components.DatePickerField
+import com.finledger.ui.components.ExpandableSection
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
+
+/**
+ * Formats the live per-person summary line shown above the Save Shared Expense CTA.
+ */
+fun formatSharedPerPersonLine(
+    totalPaise: Long,
+    participantCount: Int,
+    splitMethod: SplitMethod,
+    currency: String,
+): String {
+    if (participantCount <= 0 && splitMethod != SplitMethod.ITEM) {
+        return "Select at least 1 participant"
+    }
+    return when (splitMethod) {
+        SplitMethod.EQUAL -> {
+            val perPerson = if (participantCount > 0) totalPaise / participantCount else 0L
+            "Each person pays ${MoneyFormatter.format(perPerson, currency)}"
+        }
+        SplitMethod.ITEM -> "Items total: ${MoneyFormatter.format(totalPaise, currency)}"
+        else -> "${splitMethod.displayName} split · ${MoneyFormatter.format(totalPaise, currency)} ($participantCount people)"
+    }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -88,6 +110,7 @@ fun AddSharedExpenseScreen(
     val customInputs = remember { mutableStateMapOf<Long, String>() }
     val includedParticipants = remember { mutableStateMapOf<Long, Boolean>(SplitCalculator.USER_PERSON_ID to true) }
     var items by remember { mutableStateOf(listOf(ItemSplitInput("Item 1", 0L, listOf(SplitCalculator.USER_PERSON_ID)))) }
+    var showAdvancedSplit by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.events, selectedEventId) {
@@ -179,6 +202,7 @@ fun AddSharedExpenseScreen(
                 onValueChange = { amountText = it; errorText = null },
                 label = "Total Expense Amount",
                 currency = state.primaryCurrency,
+                autoFocus = true,
             )
 
             OutlinedTextField(
@@ -190,84 +214,100 @@ fun AddSharedExpenseScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            DatePickerField(dateMs = dateMs, onDateSelected = { dateMs = it })
-
-            if (state.groups.isNotEmpty()) {
-                Text("Group (Optional)", style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    FilterChip(
-                        selected = selectedGroupId == null,
-                        onClick = {
-                            selectedGroupId = null
-                            if (selectedEventId != null && state.events.firstOrNull { it.event.id == selectedEventId }?.event?.groupId != null) {
-                                selectedEventId = null
-                            }
-                        },
-                        label = { Text("None") },
+            val hasPrefilledGroup = groupId != null && groupId > 0L
+            val hasPrefilledEvent = eventId != null && eventId > 0L
+            if (hasPrefilledGroup || hasPrefilledEvent) {
+                val scopeParts = buildList {
+                    selectedGroupId?.let { gid ->
+                        state.groups.firstOrNull { it.id == gid }?.name?.let { add("Group: $it") }
+                    }
+                    selectedEventId?.let { eid ->
+                        state.events.firstOrNull { it.event.id == eid }?.event?.name?.let { add("Event: $it") }
+                    }
+                }
+                if (scopeParts.isNotEmpty()) {
+                    Text(
+                        text = scopeParts.joinToString(" · "),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
                     )
-                    state.groups.forEach { group ->
+                }
+                if (hasPrefilledGroup && !hasPrefilledEvent && availableEvents.isNotEmpty()) {
+                    Text("Event in Group (Optional)", style = MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         FilterChip(
-                            selected = selectedGroupId == group.id,
+                            selected = selectedEventId == null,
+                            onClick = { selectedEventId = null },
+                            label = { Text("Direct Expense") },
+                        )
+                        availableEvents.forEach { evMeta ->
+                            FilterChip(
+                                selected = selectedEventId == evMeta.event.id,
+                                onClick = { selectedEventId = evMeta.event.id },
+                                label = { Text(evMeta.event.name) },
+                            )
+                        }
+                    }
+                }
+            } else {
+                if (state.groups.isNotEmpty()) {
+                    Text("Group (Optional)", style = MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        FilterChip(
+                            selected = selectedGroupId == null,
                             onClick = {
-                                selectedGroupId = group.id
-                                val curEv = state.events.firstOrNull { it.event.id == selectedEventId }?.event
-                                if (curEv != null && curEv.groupId != group.id) {
+                                selectedGroupId = null
+                                if (selectedEventId != null && state.events.firstOrNull { it.event.id == selectedEventId }?.event?.groupId != null) {
                                     selectedEventId = null
                                 }
                             },
-                            label = { Text(group.name) },
+                            label = { Text("None") },
                         )
+                        state.groups.forEach { group ->
+                            FilterChip(
+                                selected = selectedGroupId == group.id,
+                                onClick = {
+                                    selectedGroupId = group.id
+                                    val curEv = state.events.firstOrNull { it.event.id == selectedEventId }?.event
+                                    if (curEv != null && curEv.groupId != group.id) {
+                                        selectedEventId = null
+                                    }
+                                },
+                                label = { Text(group.name) },
+                            )
+                        }
                     }
                 }
-            }
 
-            if (availableEvents.isNotEmpty()) {
-                Text(
-                    text = if (selectedGroupId != null) "Event in Group (Optional)" else "Event (Optional)",
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    FilterChip(
-                        selected = selectedEventId == null,
-                        onClick = { selectedEventId = null },
-                        label = { Text("None / Direct Expense") },
+                if (availableEvents.isNotEmpty()) {
+                    Text(
+                        text = if (selectedGroupId != null) "Event in Group (Optional)" else "Event (Optional)",
+                        style = MaterialTheme.typography.titleSmall,
                     )
-                    availableEvents.forEach { evMeta ->
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         FilterChip(
-                            selected = selectedEventId == evMeta.event.id,
-                            onClick = {
-                                selectedEventId = evMeta.event.id
-                                if (evMeta.event.groupId != null) {
-                                    selectedGroupId = evMeta.event.groupId
-                                }
-                            },
-                            label = { Text(evMeta.event.name) },
+                            selected = selectedEventId == null,
+                            onClick = { selectedEventId = null },
+                            label = { Text("None / Direct Expense") },
                         )
+                        availableEvents.forEach { evMeta ->
+                            FilterChip(
+                                selected = selectedEventId == evMeta.event.id,
+                                onClick = {
+                                    selectedEventId = evMeta.event.id
+                                    if (evMeta.event.groupId != null) {
+                                        selectedGroupId = evMeta.event.groupId
+                                    }
+                                },
+                                label = { Text(evMeta.event.name) },
+                            )
+                        }
                     }
                 }
             }
 
-            CategoryPickerGrid(
-                categories = state.categories,
-                selectedCategoryId = selectedCategoryId,
-                onSelectCategory = { selectedCategoryId = it.id },
-            )
-
-            // Payer section
+            // Who paid (default: "You", single-payer quick chips)
             Text("Who Paid?", style = MaterialTheme.typography.titleSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                FilterChip(
-                    selected = !multiPayerMode,
-                    onClick = { multiPayerMode = false },
-                    label = { Text("Single Payer") },
-                )
-                FilterChip(
-                    selected = multiPayerMode,
-                    onClick = { multiPayerMode = true },
-                    label = { Text("Multiple Payers") },
-                )
-            }
-
             if (!multiPayerMode) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     allPeople.forEach { p ->
@@ -279,20 +319,10 @@ fun AddSharedExpenseScreen(
                     }
                 }
             } else {
-                allPeople.forEach { p ->
-                    AmountTextField(
-                        value = payerAmounts[p.id] ?: "",
-                        onValueChange = { payerAmounts[p.id] = it },
-                        label = "${p.name} paid",
-                        currency = state.primaryCurrency,
-                    )
-                }
-                val totalTarget = MoneyFormatter.parseToPaise(amountText) ?: 0L
-                val paidSum = allPeople.sumOf { p -> MoneyFormatter.parseToPaise(payerAmounts[p.id].orEmpty()) ?: 0L }
                 Text(
-                    text = "Payers total: ${MoneyFormatter.format(paidSum, state.primaryCurrency)} / ${MoneyFormatter.format(totalTarget, state.primaryCurrency)}",
+                    text = "Multiple payers configured in Advanced split & details",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (totalTarget > 0L && paidSum == totalTarget) MaterialTheme.colorScheme.primary else FinLedgerTheme.colors.inkMuted48,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
 
@@ -308,94 +338,153 @@ fun AddSharedExpenseScreen(
                 )
             }
 
-            // Participants (exclude toggle)
-            Text("Participants in Split", style = MaterialTheme.typography.titleSmall)
-            allPeople.forEach { p ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Checkbox(
-                        checked = includedParticipants[p.id] == true,
-                        onCheckedChange = { includedParticipants[p.id] = it },
+            // Participants (all scoped members pre-checked)
+            Text("Participants (${activeParticipantIds.size})", style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                allPeople.forEach { p ->
+                    val included = includedParticipants[p.id] == true
+                    FilterChip(
+                        selected = included,
+                        onClick = {
+                            includedParticipants[p.id] = !included
+                            errorText = null
+                        },
+                        label = { Text(p.name) },
                     )
-                    Text(p.name, style = MaterialTheme.typography.bodyMedium)
                 }
             }
 
-            SplitMethodSelector(
-                selected = splitMethod,
-                onSelect = { splitMethod = it },
-            )
-
-            when (splitMethod) {
-                SplitMethod.EQUAL -> {
-                    val total = MoneyFormatter.parseToPaise(amountText) ?: 0L
-                    val perPerson = if (activeParticipantIds.isNotEmpty()) total / activeParticipantIds.size else 0L
-                    Text(
-                        text = "Each of ${activeParticipantIds.size} people pays ${MoneyFormatter.format(perPerson, state.primaryCurrency)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
+            ExpandableSection(
+                title = "Advanced split & details",
+                subtitle = if (!showAdvancedSplit) {
+                    "Multi-payer, custom / % / shares / item split, category, date, notes"
+                } else {
+                    null
+                },
+                expanded = showAdvancedSplit,
+                onToggle = { showAdvancedSplit = !showAdvancedSplit },
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    FilterChip(
+                        selected = !multiPayerMode,
+                        onClick = { multiPayerMode = false },
+                        label = { Text("Single Payer") },
+                    )
+                    FilterChip(
+                        selected = multiPayerMode,
+                        onClick = { multiPayerMode = true },
+                        label = { Text("Multiple Payers") },
                     )
                 }
-                SplitMethod.CUSTOM_AMOUNT, SplitMethod.PERCENTAGE, SplitMethod.SHARES -> {
-                    val unitLabel = when (splitMethod) {
-                        SplitMethod.CUSTOM_AMOUNT -> "Amount"
-                        SplitMethod.PERCENTAGE -> "Percent (%)"
-                        else -> "Weight / Shares"
-                    }
-                    allPeople.filter { it.id in activeParticipantIds }.forEach { p ->
-                        OutlinedTextField(
-                            value = customInputs[p.id] ?: "",
-                            onValueChange = { customInputs[p.id] = it; errorText = null },
-                            label = { Text("${p.name} — $unitLabel") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            shape = MaterialTheme.shapes.large,
-                            modifier = Modifier.fillMaxWidth(),
+
+                if (multiPayerMode) {
+                    allPeople.forEach { p ->
+                        AmountTextField(
+                            value = payerAmounts[p.id] ?: "",
+                            onValueChange = { payerAmounts[p.id] = it },
+                            label = "${p.name} paid",
+                            currency = state.primaryCurrency,
                         )
                     }
-                    when (splitMethod) {
-                        SplitMethod.CUSTOM_AMOUNT -> {
-                            val totalTarget = MoneyFormatter.parseToPaise(amountText) ?: 0L
-                            val allocated = activeParticipantIds.sumOf { id ->
-                                MoneyFormatter.parseToPaise(customInputs[id].orEmpty()) ?: 0L
-                            }
-                            Text(
-                                text = "Allocated: ${MoneyFormatter.format(allocated, state.primaryCurrency)} / ${MoneyFormatter.format(totalTarget, state.primaryCurrency)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (totalTarget > 0L && allocated == totalTarget) MaterialTheme.colorScheme.primary else FinLedgerTheme.colors.inkMuted48,
-                            )
-                        }
-                        SplitMethod.PERCENTAGE -> {
-                            val pctSum = activeParticipantIds.sumOf { id ->
-                                customInputs[id]?.toDoubleOrNull() ?: 0.0
-                            }
-                            Text(
-                                text = "Total percentage: ${String.format(Locale.US, "%.1f", pctSum)}% (must equal 100%)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (kotlin.math.abs(pctSum - 100.0) <= 0.01) MaterialTheme.colorScheme.primary else FinLedgerTheme.colors.inkMuted48,
-                            )
-                        }
-                        else -> Unit
-                    }
-                }
-                SplitMethod.ITEM -> {
-                    ItemSplitEntry(
-                        items = items,
-                        people = allPeople.filter { it.id in activeParticipantIds },
-                        currency = state.primaryCurrency,
-                        onItemsChange = { items = it },
+                    val totalTarget = MoneyFormatter.parseToPaise(amountText) ?: 0L
+                    val paidSum = allPeople.sumOf { p -> MoneyFormatter.parseToPaise(payerAmounts[p.id].orEmpty()) ?: 0L }
+                    Text(
+                        text = "Payers total: ${MoneyFormatter.format(paidSum, state.primaryCurrency)} / ${MoneyFormatter.format(totalTarget, state.primaryCurrency)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (totalTarget > 0L && paidSum == totalTarget) MaterialTheme.colorScheme.primary else FinLedgerTheme.colors.inkMuted48,
                     )
                 }
+
+                SplitMethodSelector(
+                    selected = splitMethod,
+                    onSelect = { splitMethod = it },
+                )
+
+                when (splitMethod) {
+                    SplitMethod.EQUAL -> Unit
+                    SplitMethod.CUSTOM_AMOUNT, SplitMethod.PERCENTAGE, SplitMethod.SHARES -> {
+                        val unitLabel = when (splitMethod) {
+                            SplitMethod.CUSTOM_AMOUNT -> "Amount"
+                            SplitMethod.PERCENTAGE -> "Percent (%)"
+                            else -> "Weight / Shares"
+                        }
+                        allPeople.filter { it.id in activeParticipantIds }.forEach { p ->
+                            OutlinedTextField(
+                                value = customInputs[p.id] ?: "",
+                                onValueChange = { customInputs[p.id] = it; errorText = null },
+                                label = { Text("${p.name} — $unitLabel") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true,
+                                shape = MaterialTheme.shapes.large,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        when (splitMethod) {
+                            SplitMethod.CUSTOM_AMOUNT -> {
+                                val totalTarget = MoneyFormatter.parseToPaise(amountText) ?: 0L
+                                val allocated = activeParticipantIds.sumOf { id ->
+                                    MoneyFormatter.parseToPaise(customInputs[id].orEmpty()) ?: 0L
+                                }
+                                Text(
+                                    text = "Allocated: ${MoneyFormatter.format(allocated, state.primaryCurrency)} / ${MoneyFormatter.format(totalTarget, state.primaryCurrency)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (totalTarget > 0L && allocated == totalTarget) MaterialTheme.colorScheme.primary else FinLedgerTheme.colors.inkMuted48,
+                                )
+                            }
+                            SplitMethod.PERCENTAGE -> {
+                                val pctSum = activeParticipantIds.sumOf { id ->
+                                    customInputs[id]?.toDoubleOrNull() ?: 0.0
+                                }
+                                Text(
+                                    text = "Total percentage: ${String.format(Locale.US, "%.1f", pctSum)}% (must equal 100%)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (kotlin.math.abs(pctSum - 100.0) <= 0.01) MaterialTheme.colorScheme.primary else FinLedgerTheme.colors.inkMuted48,
+                                )
+                            }
+                            else -> Unit
+                        }
+                    }
+                    SplitMethod.ITEM -> {
+                        ItemSplitEntry(
+                            items = items,
+                            people = allPeople.filter { it.id in activeParticipantIds },
+                            currency = state.primaryCurrency,
+                            onItemsChange = { items = it },
+                        )
+                    }
+                }
+
+                CategoryPickerGrid(
+                    categories = state.categories,
+                    selectedCategoryId = selectedCategoryId,
+                    onSelectCategory = { selectedCategoryId = it.id },
+                )
+
+                DatePickerField(dateMs = dateMs, onDateSelected = { dateMs = it })
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes (Optional)") },
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Notes (Optional)") },
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
+            val previewTotalPaise = if (splitMethod == SplitMethod.ITEM) {
+                items.sumOf { it.amountPaise }
+            } else {
+                MoneyFormatter.parseToPaise(amountText) ?: 0L
+            }
+            Text(
+                text = formatSharedPerPersonLine(
+                    totalPaise = previewTotalPaise,
+                    participantCount = activeParticipantIds.size,
+                    splitMethod = splitMethod,
+                    currency = state.primaryCurrency,
+                ),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
             )
 
             (errorText ?: state.errorMessage)?.let {
@@ -404,6 +493,10 @@ fun AddSharedExpenseScreen(
 
             Button(
                 onClick = {
+                    if (splitMethod != SplitMethod.ITEM && activeParticipantIds.isEmpty()) {
+                        errorText = "Select at least 1 participant"
+                        return@Button
+                    }
                     val totalPaise = if (splitMethod == SplitMethod.ITEM) {
                         items.sumOf { it.amountPaise }
                     } else {

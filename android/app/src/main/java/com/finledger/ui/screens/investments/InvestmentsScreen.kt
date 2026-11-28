@@ -63,6 +63,7 @@ import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.DatePickerField
 import com.finledger.ui.components.EmptyStateView
+import com.finledger.ui.components.ExpandableSection
 import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
@@ -213,6 +214,7 @@ fun AddInvestmentScreen(
     var dateMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }
     var notes by remember { mutableStateOf("") }
+    var showMoreOptions by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.accounts) {
@@ -259,22 +261,6 @@ fun AddInvestmentScreen(
                 }
             }
             OutlinedTextField(
-                value = platform,
-                onValueChange = { platform = it },
-                label = { Text("Platform / Broker (Optional)") },
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = symbol,
-                onValueChange = { symbol = it },
-                label = { Text("Ticker / Symbol (Optional)") },
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
                 value = unitsText,
                 onValueChange = { unitsText = it; errorText = null },
                 label = { Text("Quantity / Units") },
@@ -289,26 +275,56 @@ fun AddInvestmentScreen(
                 label = "Purchase Price per Unit",
                 currency = state.primaryCurrency,
             )
-            AmountTextField(
-                value = feesText,
-                onValueChange = { feesText = it },
-                label = "Brokerage / Fees / Taxes (Optional)",
-                currency = state.primaryCurrency,
-            )
-            DatePickerField(dateMs = dateMs, onDateSelected = { dateMs = it }, label = "Purchase Date")
-            AccountPickerDropdown(
-                accounts = state.accounts,
-                selectedAccountId = selectedAccountId,
-                onSelectAccount = { selectedAccountId = it.account.id },
-                label = "Paid From Account",
-            )
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Notes (Optional)") },
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
-            )
+
+            val defaultAccName = state.accounts.firstOrNull { it.account.id == selectedAccountId }?.account?.name
+            ExpandableSection(
+                title = "More options",
+                subtitle = if (!showMoreOptions) {
+                    val accHint = defaultAccName?.let { "Account: $it · " }.orEmpty()
+                    "${accHint}Broker, ticker, fees, purchase date, notes"
+                } else {
+                    null
+                },
+                expanded = showMoreOptions,
+                onToggle = { showMoreOptions = !showMoreOptions },
+            ) {
+                OutlinedTextField(
+                    value = platform,
+                    onValueChange = { platform = it },
+                    label = { Text("Platform / Broker (Optional)") },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = symbol,
+                    onValueChange = { symbol = it },
+                    label = { Text("Ticker / Symbol (Optional)") },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                AmountTextField(
+                    value = feesText,
+                    onValueChange = { feesText = it },
+                    label = "Brokerage / Fees / Taxes (Optional)",
+                    currency = state.primaryCurrency,
+                )
+                DatePickerField(dateMs = dateMs, onDateSelected = { dateMs = it }, label = "Purchase Date")
+                AccountPickerDropdown(
+                    accounts = state.accounts,
+                    selectedAccountId = selectedAccountId,
+                    onSelectAccount = { selectedAccountId = it.account.id },
+                    label = "Paid From Account",
+                )
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes (Optional)") },
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             (errorText ?: state.errorMessage)?.let {
                 Text(it, color = FinLedgerTheme.colors.negative, style = MaterialTheme.typography.bodySmall)

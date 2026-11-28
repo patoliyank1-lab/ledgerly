@@ -11,13 +11,16 @@ import com.finledger.data.local.dao.ImportHistoryDao
 import com.finledger.data.local.entity.*
 import com.finledger.data.repository.*
 import com.finledger.domain.model.AccountWithBalance
+import com.finledger.domain.model.TransactionWithDetails
 import com.finledger.domain.usecase.*
+import com.finledger.worker.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
@@ -35,11 +38,16 @@ data class DataManagementUiState(
     val archivedGroups: List<GroupEntity> = emptyList(),
     val auditLogs: List<AuditLogEntity> = emptyList(),
     val primaryCurrency: String = "INR",
+    val autoBackupEnabled: Boolean = false,
+    val activeTransactionCount: Int = 0,
+    val lastBackupAtMs: Long? = null,
+    val showBackupReminder: Boolean = false,
     val freeStorageMb: Long = 1024L,
     val statusMessage: String? = null,
     val csvFileName: String = "",
     val csvTable: CsvTable? = null,
     val columnMapping: ColumnMapping = ColumnMapping(),
+    val importAccountId: Long? = null,
     val analyzedRows: List<AnalyzedImportRow> = emptyList(),
     val lastImportResult: ImportExecutionResult? = null,
     val restorePreview: RestorePreview? = null,
@@ -49,6 +57,7 @@ data class DataManagementUiState(
 class ImportSessionHolder @Inject constructor() {
     val csvState = MutableStateFlow<Pair<String, CsvTable?>>("" to null)
     val mapping = MutableStateFlow(ColumnMapping())
+    val importAccountId = MutableStateFlow<Long?>(null)
     val analyzed = MutableStateFlow<List<AnalyzedImportRow>>(emptyList())
     val importResult = MutableStateFlow<ImportExecutionResult?>(null)
     val restorePreview = MutableStateFlow<RestorePreview?>(null)
@@ -71,12 +80,13 @@ class DataManagementViewModel @Inject constructor(
     private val session: ImportSessionHolder,
     importHistoryDao: ImportHistoryDao,
     backupHistoryDao: BackupHistoryDao,
-    userPreferencesRepository: UserPreferencesRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _status = MutableStateFlow<String?>(null)
     private val _csvState = session.csvState
     private val _mapping = session.mapping
+    private val _importAccountId = session.importAccountId
     private val _analyzed = session.analyzed
     private val _importResult = session.importResult
     private val _restorePreview = session.restorePreview
@@ -92,9 +102,11 @@ class DataManagementViewModel @Inject constructor(
         socialRepository.observeArchivedGroups(),
         auditLogRepository.observeRecent(150),
         userPreferencesRepository.preferences,
+        transactionRepository.observeAllTransactionsWithDetails(),
         _status,
         _csvState,
         _mapping,
+        _importAccountId,
         _analyzed,
         _importResult,
         _restorePreview,
@@ -118,14 +130,20 @@ class DataManagementViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val logs = values[8] as List<AuditLogEntity>
         val prefs = values[9] as com.finledger.domain.model.UserPreferences
-        val status = values[10] as String?
         @Suppress("UNCHECKED_CAST")
-        val csvPair = values[11] as Pair<String, CsvTable?>
-        val mapping = values[12] as ColumnMapping
+        val allTxs = values[10] as List<TransactionWithDetails>
+        val status = values[11] as String?
         @Suppress("UNCHECKED_CAST")
-        val analyzed = values[13] as List<AnalyzedImportRow>
-        val importRes = values[14] as ImportExecutionResult?
-        val restorePrev = values[15] as RestorePreview?
+        val csvPair = values[12] as Pair<String, CsvTable?>
+        val mapping = values[13] as ColumnMapping
+        val importAccId = values[14] as Long?
+        @Suppress("UNCHECKED_CAST")
+        val analyzed = values[15] as List<AnalyzedImportRow>
+        val importRes = values[16] as ImportExecutionResult?
+        val restorePrev = values[17] as RestorePreview?
+
+        val activeTxCount = allTxs.count { !it.transaction.isDeleted }
+        val lastBackupAt = backups.firstOrNull()?.createdAt
 
         DataManagementUiState(
             accounts = accounts,
@@ -138,11 +156,21 @@ class DataManagementViewModel @Inject constructor(
             archivedGroups = archGroups,
             auditLogs = logs,
             primaryCurrency = prefs.primaryCurrency,
+            autoBackupEnabled = prefs.autoBackupEnabled,
+            activeTransactionCount = activeTxCount,
+            lastBackupAtMs = lastBackupAt,
+            showBackupReminder = shouldShowBackupReminder(
+                activeTransactionCount = activeTxCount,
+                lastBackupAtMs = lastBackupAt,
+                autoBackupEnabled = prefs.autoBackupEnabled,
+                snoozedUntilMs = prefs.backupReminderSnoozedUntilMs,
+            ),
             freeStorageMb = availableStorageMb(),
             statusMessage = status,
             csvFileName = csvPair.first,
             csvTable = csvPair.second,
             columnMapping = mapping,
+            importAccountId = importAccId,
             analyzedRows = analyzed,
             lastImportResult = importRes,
             restorePreview = restorePrev,
@@ -205,7 +233,12 @@ class DataManagementViewModel @Inject constructor(
         }
     }
 
-    fun loadCsvFromUri(uri: Uri, fileName: String? = null, onLoaded: () -> Unit) {
+    fun loadCsvFromUri(
+        uri: Uri,
+        fileName: String? = null,
+        onNeedsMapping: () -> Unit,
+        onPreviewReady: () -> Unit = onNeedsMapping,
+    ) {
         viewModelScope.launch {
             val resolvedName = fileName ?: resolveDisplayName(uri)
             runCatching {
@@ -217,29 +250,27 @@ class DataManagementViewModel @Inject constructor(
                     _status.value = "CSV file has no headers or rows"
                     return@onSuccess
                 }
-                val lowerHeaders = table.headers.map { it.lowercase() }
-                val dateIdx = lowerHeaders.indexOfFirst { it.contains("date") }.takeIf { it >= 0 } ?: 0
-                val amountIdx = lowerHeaders.indexOfFirst { it.contains("amount") || it.contains("value") }.takeIf { it >= 0 }
-                    ?: 1.coerceAtMost((table.headers.size - 1).coerceAtLeast(0))
-                val typeIdx = lowerHeaders.indexOfFirst { it.contains("type") || it.contains("dr/cr") || it.contains("credit") }.takeIf { it >= 0 }
-                val merchantIdx = lowerHeaders.indexOfFirst { it.contains("merchant") || it.contains("payee") || it.contains("party") }.takeIf { it >= 0 }
-                    ?: if (table.headers.size > 2) 2 else null
-                val descIdx = lowerHeaders.indexOfFirst { it.contains("desc") || it.contains("narration") || it.contains("particular") }.takeIf { it >= 0 }
-                    ?: if (table.headers.size > 3) 3 else null
-                val notesIdx = lowerHeaders.indexOfFirst { it.contains("note") || it.contains("remark") }.takeIf { it >= 0 }
+                val detected = ImportValidator.autoDetectMapping(table.headers)
+                val prefs = userPreferencesRepository.preferences.first()
+                val activeAccounts = uiState.value.accounts.ifEmpty {
+                    accountRepository.observeActiveAccountsWithBalances().first()
+                }
+                val targetAccountId = prefs.lastUsedAccountId
+                    ?.takeIf { id -> activeAccounts.any { it.account.id == id } }
+                    ?: activeAccounts.firstOrNull()?.account?.id
 
                 _csvState.value = resolvedName to table
                 _analyzed.value = emptyList()
                 _importResult.value = null
-                _mapping.value = ColumnMapping(
-                    dateIndex = dateIdx,
-                    amountIndex = amountIdx,
-                    typeIndex = typeIdx,
-                    merchantIndex = merchantIdx,
-                    descriptionIndex = descIdx,
-                    notesIndex = notesIdx,
-                )
-                onLoaded()
+                _mapping.value = detected
+                _importAccountId.value = targetAccountId
+
+                if (targetAccountId != null && ImportValidator.isMappingConfident(table, detected)) {
+                    _analyzed.value = executeImportUseCase.analyze(table, detected, targetAccountId, prefs.primaryCurrency)
+                    onPreviewReady()
+                } else {
+                    onNeedsMapping()
+                }
             }.onFailure { _status.value = "CSV parse error: ${it.message}" }
         }
     }
@@ -260,6 +291,7 @@ class DataManagementViewModel @Inject constructor(
     fun updateMappingAndAnalyze(mapping: ColumnMapping, targetAccountId: Long, currency: String, onReady: () -> Unit) {
         val table = _csvState.value.second ?: return
         _mapping.value = mapping
+        _importAccountId.value = targetAccountId
         viewModelScope.launch {
             _analyzed.value = executeImportUseCase.analyze(table, mapping, targetAccountId, currency)
             onReady()
@@ -329,12 +361,43 @@ class DataManagementViewModel @Inject constructor(
         _status.value = null
     }
 
+    fun setAutoBackupEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setAutoBackupEnabled(enabled)
+            ReminderScheduler.syncWithPreferences(context, userPreferencesRepository.preferences.first())
+        }
+    }
+
+    fun snoozeBackupReminder() {
+        viewModelScope.launch {
+            userPreferencesRepository.snoozeBackupReminder(System.currentTimeMillis() + BACKUP_SNOOZE_MS)
+        }
+    }
+
     private fun availableStorageMb(): Long {
         return try {
             val stat = StatFs(context.filesDir.path)
             (stat.availableBlocksLong * stat.blockSizeLong) / (1024L * 1024L)
         } catch (_: Exception) {
             1024L
+        }
+    }
+
+    companion object {
+        const val BACKUP_REMINDER_TX_THRESHOLD = 20
+        const val BACKUP_SNOOZE_MS = 7L * 86_400_000L
+
+        fun shouldShowBackupReminder(
+            activeTransactionCount: Int,
+            lastBackupAtMs: Long?,
+            autoBackupEnabled: Boolean,
+            snoozedUntilMs: Long,
+            nowMs: Long = System.currentTimeMillis(),
+        ): Boolean {
+            if (activeTransactionCount < BACKUP_REMINDER_TX_THRESHOLD) return false
+            if (nowMs < snoozedUntilMs) return false
+            if (lastBackupAtMs != null && (nowMs - lastBackupAtMs) in 0L..BACKUP_SNOOZE_MS) return false
+            return lastBackupAtMs == null || !autoBackupEnabled
         }
     }
 }

@@ -18,6 +18,12 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :id AND isDeleted = 0")
     fun observeById(id: Long): Flow<DocumentEntity?>
 
+    @Query("SELECT * FROM documents WHERE id = :id LIMIT 1")
+    suspend fun getByIdOnce(id: Long): DocumentEntity?
+
+    @Query("SELECT * FROM documents WHERE linkedEntityType = :entityType AND linkedEntityId = :entityId AND isDeleted = 0 ORDER BY createdAt DESC")
+    fun observeByLinkedEntity(entityType: String, entityId: Long): Flow<List<DocumentEntity>>
+
     @Query("SELECT * FROM documents")
     suspend fun getAllRawOnce(): List<DocumentEntity>
 

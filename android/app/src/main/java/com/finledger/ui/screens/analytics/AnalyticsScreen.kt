@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -77,7 +78,6 @@ fun AnalyticsScreen(
             TabRow(selectedTabIndex = tabIndex, containerColor = MaterialTheme.colorScheme.surface) {
                 Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Spending") })
                 Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Cash Flow") })
-                Tab(selected = tabIndex == 2, onClick = { tabIndex = 2 }, text = { Text("Aging") })
             }
 
             when (tabIndex) {
@@ -87,6 +87,12 @@ fun AnalyticsScreen(
                         contentPadding = PaddingValues(Spacing.md),
                         verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
+                        if (state.spendingInsight.isNotBlank()) {
+                            item {
+                                SpendingInsightBanner(insight = state.spendingInsight)
+                            }
+                        }
+
                         item {
                             DateRangePresetRow(
                                 selectedIndex = presetIndex,
@@ -187,7 +193,7 @@ fun AnalyticsScreen(
                     }
                 }
 
-                1 -> {
+                else -> {
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(Spacing.md),
@@ -238,67 +244,37 @@ fun AnalyticsScreen(
                         }
                     }
                 }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(Spacing.md),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-                    ) {
-                        item {
-                            Text(
-                                text = "Receivables Aging Report",
-                                style = MaterialTheme.typography.headlineMedium,
-                            )
-                            Text(
-                                text = "Shows how long money owed to you has been outstanding.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = FinLedgerTheme.colors.inkMuted48,
-                            )
-                        }
-                        if (state.agingReport.isEmpty()) {
-                            item {
-                                Text(
-                                    text = "All settled up — nobody owes you money.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = FinLedgerTheme.colors.inkMuted48,
-                                    modifier = Modifier.padding(vertical = Spacing.md),
-                                )
-                            }
-                        } else {
-                            items(state.agingReport, key = { it.person.id }) { row ->
-                                Card(
-                                    shape = MaterialTheme.shapes.large,
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(Spacing.md),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Column {
-                                            Text(row.person.name, style = MaterialTheme.typography.bodyLarge)
-                                            Text(
-                                                text = "${row.daysOutstanding} days (${row.bucketLabel})",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = FinLedgerTheme.colors.inkMuted48,
-                                            )
-                                        }
-                                        Text(
-                                            text = MoneyFormatter.format(row.outstandingPaise, state.primaryCurrency),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = FinLedgerTheme.colors.positive,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
+        }
+    }
+}
+
+@Composable
+private fun SpendingInsightBanner(insight: String) {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.md),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = insight,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }

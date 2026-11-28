@@ -1,5 +1,6 @@
 package com.finledger.ui.screens.transactions
 
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -61,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.finledger.data.local.entity.DocumentEntity
 import com.finledger.data.local.entity.TransactionType
 import com.finledger.domain.model.QuickTransactionTemplate
 import com.finledger.domain.model.TransactionWithDetails
@@ -168,6 +170,8 @@ fun QuickAddScreen(
     var transferNotes by remember { mutableStateOf("") }
 
     var showMoreDetails by remember { mutableStateOf(false) }
+    var pendingReceiptUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingVaultDoc by remember { mutableStateOf<DocumentEntity?>(null) }
     var showSaveTemplateDialog by remember { mutableStateOf(false) }
     var templateLabelDraft by remember { mutableStateOf("") }
     var templatePendingDelete by remember { mutableStateOf<QuickTransactionTemplate?>(null) }
@@ -362,6 +366,8 @@ fun QuickAddScreen(
                                                 notes = expenseNotes,
                                                 isRefund = isRefund,
                                                 tagIds = selectedExpenseTags.toList(),
+                                                pendingReceiptUri = pendingReceiptUri,
+                                                pendingVaultDocumentId = pendingVaultDoc?.id,
                                                 onSuccess = onBack,
                                             )
                                         } else {
@@ -374,6 +380,8 @@ fun QuickAddScreen(
                                                 description = incomeDescription,
                                                 notes = incomeNotes,
                                                 tagIds = selectedIncomeTags.toList(),
+                                                pendingReceiptUri = pendingReceiptUri,
+                                                pendingVaultDocumentId = pendingVaultDoc?.id,
                                                 onSuccess = onBack,
                                             )
                                         }
@@ -385,6 +393,8 @@ fun QuickAddScreen(
                                             toAccountId = result.toAccountId,
                                             dateMs = dateMs,
                                             notes = transferNotes,
+                                            pendingReceiptUri = pendingReceiptUri,
+                                            pendingVaultDocumentId = pendingVaultDoc?.id,
                                             onSuccess = onBack,
                                         )
                                     }
@@ -782,6 +792,23 @@ fun QuickAddScreen(
                         )
                     }
                 }
+
+                TransactionReceiptAttachRow(
+                    vaultDocuments = state.vaultDocuments,
+                    onPickFileUri = { uri ->
+                        pendingReceiptUri = uri
+                        pendingVaultDoc = null
+                    },
+                    onPickVaultDocument = { doc ->
+                        pendingVaultDoc = doc
+                        pendingReceiptUri = null
+                    },
+                    stagedLabel = pendingVaultDoc?.name ?: pendingReceiptUri?.lastPathSegment,
+                    onClearStaged = {
+                        pendingReceiptUri = null
+                        pendingVaultDoc = null
+                    },
+                )
             }
 
             Spacer(modifier = Modifier.height(Spacing.md))

@@ -49,6 +49,7 @@ fun EditTransactionScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val tx by viewModel.observeTransaction(transactionId).collectAsStateWithLifecycle()
+    val receipts by viewModel.observeTransactionReceipts(transactionId).collectAsStateWithLifecycle()
 
     var initialized by remember { mutableStateOf(false) }
     var amountText by remember { mutableStateOf("") }
@@ -172,6 +173,19 @@ fun EditTransactionScreen(
                 label = { Text("Notes") },
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
+            )
+
+            TransactionAttachedReceiptsSection(
+                receipts = receipts,
+                vaultDocuments = state.vaultDocuments,
+                onPickFileUri = { uri ->
+                    val label = merchant.ifBlank { description.ifBlank { "Receipt" } }
+                    viewModel.attachReceiptUri(transactionId, uri, name = label)
+                },
+                onPickVaultDocument = { doc ->
+                    viewModel.attachExistingVaultDocument(transactionId, doc.id)
+                },
+                onDetach = viewModel::detachReceipt,
             )
 
             state.errorMessage?.let {

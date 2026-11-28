@@ -52,6 +52,7 @@ import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.AccountPickerDropdown
 import com.finledger.ui.components.AmountTextField
 import com.finledger.ui.components.EmptyStateView
+import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
@@ -62,20 +63,7 @@ fun BillsScreen(
     onEditBill: (Long) -> Unit = {},
     viewModel: BillsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var tabIndex by remember { mutableIntStateOf(0) }
-    var payingBill by remember { mutableStateOf<BillEntity?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val now = System.currentTimeMillis()
-    val overdue = state.bills.filter { it.nextDueDateMs < now }
-    val upcoming = state.bills.filter { it.nextDueDateMs >= now }
-
-    LaunchedEffect(state.errorMessage) {
-        state.errorMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearError()
-        }
-    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -101,71 +89,119 @@ fun BillsScreen(
             }
         },
     ) { padding ->
-        Column(
+        BillsContent(
+            onAddBill = onAddBill,
+            onEditBill = onEditBill,
+            snackbarHostState = snackbarHostState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-        ) {
-            TabRow(selectedTabIndex = tabIndex, containerColor = MaterialTheme.colorScheme.surface) {
-                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Upcoming (${upcoming.size})") })
-                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Overdue (${overdue.size})") })
-                Tab(selected = tabIndex == 2, onClick = { tabIndex = 2 }, text = { Text("Paid (${state.payments.size})") })
-            }
+            viewModel = viewModel,
+        )
+    }
+}
 
-            when (tabIndex) {
-                0, 1 -> {
-                    val list = if (tabIndex == 0) upcoming else overdue
-                    if (list.isEmpty()) {
-                        EmptyStateView(
-                            icon = Icons.Outlined.ReceiptLong,
-                            title = if (tabIndex == 0) "No upcoming bills" else "No overdue bills",
-                            subtitle = "Add recurring utility bills, rent, EMIs, or subscriptions.",
-                            actionLabel = "Add Bill",
-                            onAction = onAddBill,
-                            modifier = Modifier.weight(1f),
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(Spacing.md),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-                        ) {
-                            items(list, key = { it.id }) { bill ->
-                                Card(
-                                    shape = MaterialTheme.shapes.large,
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+@Composable
+fun BillsContent(
+    onAddBill: () -> Unit,
+    onEditBill: (Long) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+    viewModel: BillsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val undoCoordinator = LocalUndoCoordinator.current
+    var tabIndex by remember { mutableIntStateOf(0) }
+    var payingBill by remember { mutableStateOf<BillEntity?>(null) }
+    val now = System.currentTimeMillis()
+    val overdue = state.bills.filter { it.nextDueDateMs < now }
+    val upcoming = state.bills.filter { it.nextDueDateMs >= now }
+
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
+
+    Column(modifier = modifier) {
+        TabRow(selectedTabIndex = tabIndex, containerColor = MaterialTheme.colorScheme.surface) {
+            Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Upcoming (${upcoming.size})") })
+            Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Overdue (${overdue.size})") })
+            Tab(selected = tabIndex == 2, onClick = { tabIndex = 2 }, text = { Text("Paid (${state.payments.size})") })
+        }
+
+        when (tabIndex) {
+            0, 1 -> {
+                val list = if (tabIndex == 0) upcoming else overdue
+                if (list.isEmpty()) {
+                    EmptyStateView(
+                        icon = Icons.Outlined.ReceiptLong,
+                        title = if (tabIndex == 0) "No upcoming bills" else "No overdue bills",
+                        subtitle = "Add recurring utility bills, rent, EMIs, or subscriptions.",
+                        actionLabel = "Add Bill",
+                        onAction = onAddBill,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    ) {
+                        items(list, key = { it.id }) { bill ->
+                            Card(
+                                shape = MaterialTheme.shapes.large,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onEditBill(bill.id) },
+                            ) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onEditBill(bill.id) },
+                                        .padding(Spacing.md),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(Spacing.md),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(bill.name, style = MaterialTheme.typography.bodyLarge)
-                                            Text(
-                                                text = "Due ${DateFormatter.formatDate(bill.nextDueDateMs)} · ${bill.frequency.displayName}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = if (bill.nextDueDateMs < now) FinLedgerTheme.colors.negative else FinLedgerTheme.colors.inkMuted48,
-                                            )
-                                            Text(
-                                                text = MoneyFormatter.format(bill.expectedAmount, bill.currency),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                        }
-                                        if (state.accounts.isNotEmpty()) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(bill.name, style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            text = "Due ${DateFormatter.formatDate(bill.nextDueDateMs)} · ${bill.frequency.displayName}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (bill.nextDueDateMs < now) FinLedgerTheme.colors.negative else FinLedgerTheme.colors.inkMuted48,
+                                        )
+                                        Text(
+                                            text = MoneyFormatter.format(bill.expectedAmount, bill.currency),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                    if (state.accounts.isNotEmpty()) {
+                                        Column(horizontalAlignment = Alignment.End) {
                                             Button(
-                                                onClick = { payingBill = bill },
+                                                onClick = {
+                                                    viewModel.quickPayBill(
+                                                        bill = bill,
+                                                        onPaid = { receipt ->
+                                                            undoCoordinator?.showUndo("Marked ${bill.name} paid") {
+                                                                viewModel.undoBillPaymentDirect(receipt)
+                                                            }
+                                                        },
+                                                        onNeedsDialog = { payingBill = bill },
+                                                    )
+                                                },
                                                 shape = MaterialTheme.shapes.extraLarge,
                                             ) {
                                                 Text("Mark Paid", style = MaterialTheme.typography.labelLarge)
+                                            }
+                                            TextButton(
+                                                onClick = { payingBill = bill },
+                                                contentPadding = PaddingValues(horizontal = Spacing.xs, vertical = 0.dp),
+                                            ) {
+                                                Text("Edit & Pay", style = MaterialTheme.typography.labelMedium)
                                             }
                                         }
                                     }
@@ -174,41 +210,41 @@ fun BillsScreen(
                         }
                     }
                 }
+            }
 
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(Spacing.md),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-                    ) {
-                        items(state.payments, key = { it.id }) { payment ->
-                            val billName = state.bills.firstOrNull { it.id == payment.billId }?.name ?: "Bill #${payment.billId}"
-                            Card(
-                                shape = MaterialTheme.shapes.large,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                ) {
+                    items(state.payments, key = { it.id }) { payment ->
+                        val billName = state.bills.firstOrNull { it.id == payment.billId }?.name ?: "Bill #${payment.billId}"
+                        Card(
+                            shape = MaterialTheme.shapes.large,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(Spacing.md),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(Spacing.md),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Column {
-                                        Text(billName, style = MaterialTheme.typography.bodyLarge)
-                                        Text(
-                                            text = "Paid ${DateFormatter.formatDate(payment.paidDate ?: payment.dueDate)}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = FinLedgerTheme.colors.inkMuted48,
-                                        )
-                                    }
+                                Column {
+                                    Text(billName, style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        text = MoneyFormatter.format(payment.amount, state.primaryCurrency),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = FinLedgerTheme.colors.positive,
+                                        text = "Paid ${DateFormatter.formatDate(payment.paidDate ?: payment.dueDate)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = FinLedgerTheme.colors.inkMuted48,
                                     )
                                 }
+                                Text(
+                                    text = MoneyFormatter.format(payment.amount, state.primaryCurrency),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = FinLedgerTheme.colors.positive,
+                                )
                             }
                         }
                     }
@@ -220,13 +256,15 @@ fun BillsScreen(
     payingBill?.let { bill ->
         var amountText by remember(bill.id) { mutableStateOf(MoneyFormatter.paiseToInputString(bill.expectedAmount)) }
         var selectedAccountId by remember(bill.id) {
-            mutableStateOf(bill.paymentAccountId ?: state.accounts.firstOrNull()?.account?.id)
+            mutableStateOf(
+                BillsViewModel.resolveBillPayAccountId(bill, state.accounts, state.lastUsedAccountId)
+            )
         }
         var dialogError by remember(bill.id) { mutableStateOf<String?>(null) }
 
         AlertDialog(
             onDismissRequest = { payingBill = null },
-            title = { Text("Confirm Bill Payment") },
+            title = { Text("Edit & Pay Bill") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     Text(bill.name, style = MaterialTheme.typography.bodyLarge)
@@ -260,7 +298,12 @@ fun BillsScreen(
                             dialogError = "Select a payment account"
                             return@Button
                         }
-                        viewModel.markBillPaid(bill, amt, accId) { payingBill = null }
+                        viewModel.markBillPaid(bill, amt, accId) { receipt ->
+                            payingBill = null
+                            undoCoordinator?.showUndo("Marked ${bill.name} paid") {
+                                viewModel.undoBillPaymentDirect(receipt)
+                            }
+                        }
                     },
                     shape = MaterialTheme.shapes.extraLarge,
                 ) { Text("Confirm") }

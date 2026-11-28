@@ -21,7 +21,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material3.AlertDialog
@@ -49,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.finledger.data.local.entity.BudgetPeriod
+import com.finledger.domain.usecase.SuggestedBudget
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.components.AmountTextField
@@ -66,6 +72,7 @@ import com.finledger.ui.components.EmptyStateView
 import com.finledger.ui.components.LocalUndoCoordinator
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
+import kotlinx.coroutines.launch
 
 @Composable
 fun BudgetsScreen(
@@ -74,15 +81,7 @@ fun BudgetsScreen(
     onEditBudget: (Long) -> Unit = {},
     viewModel: BudgetsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(state.errorMessage) {
-        state.errorMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearError()
-        }
-    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -108,70 +107,247 @@ fun BudgetsScreen(
             }
         },
     ) { padding ->
-        if (state.budgets.isEmpty()) {
+        BudgetsContent(
+            onAddBudget = onAddBudget,
+            onEditBudget = onEditBudget,
+            snackbarHostState = snackbarHostState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            viewModel = viewModel,
+        )
+    }
+}
+
+@Composable
+fun BudgetsContent(
+    onAddBudget: () -> Unit,
+    onEditBudget: (Long) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+    viewModel: BudgetsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
+
+    fun handleCreateSuggested(selectedIds: Set<Long>) {
+        viewModel.createSuggestedBudgets(selectedIds) { count ->
+            scope.launch {
+                val noun = if (count == 1) "budget" else "budgets"
+                snackbarHostState.showSnackbar("Created $count monthly $noun")
+            }
+        }
+    }
+
+    if (state.budgets.isEmpty()) {
+        if (state.suggestedBudgets.isEmpty()) {
             EmptyStateView(
                 icon = Icons.Outlined.PieChart,
                 title = "No budgets created",
                 subtitle = "Set monthly or yearly spending limits by category to track adherence.",
                 actionLabel = "Create Budget",
                 onAction = onAddBudget,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier = modifier,
             )
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            Column(
+                modifier = modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.md),
             ) {
-                items(state.budgets, key = { it.budget.id }) { progress ->
-                    val ratio = (progress.percentUsed / 100f).coerceIn(0f, 1f)
-                    val barColor = when {
-                        progress.isExceeded -> FinLedgerTheme.colors.negative
-                        progress.isAlertTriggered -> FinLedgerTheme.colors.warning
-                        else -> MaterialTheme.colorScheme.primary
-                    }
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEditBudget(progress.budget.id) },
-                    ) {
-                        Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(progress.budget.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                                Text("${progress.percentUsed}%", style = MaterialTheme.typography.bodyLarge, color = barColor)
-                            }
-                            LinearProgressIndicator(
-                                progress = { ratio },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = barColor,
-                                trackColor = FinLedgerTheme.colors.dividerSoft,
+                EmptyStateView(
+                    icon = Icons.Outlined.PieChart,
+                    title = "No budgets created",
+                    subtitle = "Start with one tap from your last 3 months of spending or create one manually.",
+                    actionLabel = "Create Custom Budget",
+                    onAction = onAddBudget,
+                )
+                SuggestedBudgetsCard(
+                    suggestions = state.suggestedBudgets,
+                    currency = state.primaryCurrency,
+                    title = "Create budgets from my last 3 months",
+                    initiallyExpanded = true,
+                    onCreateSelected = ::handleCreateSuggested,
+                )
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            if (state.suggestedBudgets.isNotEmpty()) {
+                item(key = "suggested_budgets_banner") {
+                    SuggestedBudgetsCard(
+                        suggestions = state.suggestedBudgets,
+                        currency = state.primaryCurrency,
+                        title = "Suggest from last 3 months",
+                        initiallyExpanded = false,
+                        onCreateSelected = ::handleCreateSuggested,
+                    )
+                }
+            }
+            items(state.budgets, key = { it.budget.id }) { progress ->
+                val ratio = (progress.percentUsed / 100f).coerceIn(0f, 1f)
+                val barColor = when {
+                    progress.isExceeded -> FinLedgerTheme.colors.negative
+                    progress.isAlertTriggered -> FinLedgerTheme.colors.warning
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onEditBudget(progress.budget.id) },
+                ) {
+                    Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(progress.budget.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Text("${progress.percentUsed}%", style = MaterialTheme.typography.bodyLarge, color = barColor)
+                        }
+                        LinearProgressIndicator(
+                            progress = { ratio },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = barColor,
+                            trackColor = FinLedgerTheme.colors.dividerSoft,
+                        )
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(
+                                text = "Spent: ${MoneyFormatter.format(progress.spentPaise, state.primaryCurrency)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = FinLedgerTheme.colors.inkMuted48,
                             )
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(
-                                    text = "Spent: ${MoneyFormatter.format(progress.spentPaise, state.primaryCurrency)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = FinLedgerTheme.colors.inkMuted48,
-                                )
-                                Text(
-                                    text = "Limit: ${MoneyFormatter.format(progress.budget.amount, state.primaryCurrency)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = FinLedgerTheme.colors.inkMuted48,
-                                )
-                            }
+                            Text(
+                                text = "Limit: ${MoneyFormatter.format(progress.budget.amount, state.primaryCurrency)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = FinLedgerTheme.colors.inkMuted48,
+                            )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SuggestedBudgetsCard(
+    suggestions: List<SuggestedBudget>,
+    currency: String,
+    title: String,
+    initiallyExpanded: Boolean,
+    onCreateSelected: (Set<Long>) -> Unit,
+) {
+    var expanded by remember(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
+    val suggestionIds = suggestions.map { it.categoryId }
+    var selectedIds by remember(suggestionIds) { mutableStateOf(suggestionIds.toSet()) }
+
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "${suggestions.size} categories from avg monthly spend · Monthly, 80% alert",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FinLedgerTheme.colors.inkMuted48,
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Collapse suggestions" else "Expand suggestions",
+                    tint = FinLedgerTheme.colors.inkMuted48,
+                )
+            }
+
+            if (expanded) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    suggestions.forEach { suggestion ->
+                        val selected = suggestion.categoryId in selectedIds
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                selectedIds = if (selected) {
+                                    selectedIds - suggestion.categoryId
+                                } else {
+                                    selectedIds + suggestion.categoryId
+                                }
+                            },
+                            leadingIcon = if (selected) {
+                                { Icon(Icons.Outlined.Check, contentDescription = null) }
+                            } else {
+                                null
+                            },
+                            label = {
+                                Text(
+                                    "${suggestion.categoryName} · ${MoneyFormatter.format(suggestion.suggestedLimitPaise, currency)}",
+                                )
+                            },
+                        )
+                    }
+                }
+                Button(
+                    onClick = { onCreateSelected(selectedIds) },
+                    enabled = selectedIds.isNotEmpty(),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val count = selectedIds.size
+                    Text(
+                        when (count) {
+                            0 -> "Select at least 1 category"
+                            1 -> "Create 1 Monthly Budget"
+                            else -> "Create $count Monthly Budgets"
+                        },
+                    )
                 }
             }
         }
@@ -334,16 +510,7 @@ fun SavingsGoalsScreen(
     onEditGoal: (Long) -> Unit = {},
     viewModel: BudgetsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var contributeGoalId by remember { mutableStateOf<Long?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(state.errorMessage) {
-        state.errorMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearError()
-        }
-    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -369,64 +536,89 @@ fun SavingsGoalsScreen(
             }
         },
     ) { padding ->
-        if (state.goals.isEmpty()) {
-            EmptyStateView(
-                icon = Icons.Outlined.Savings,
-                title = "No savings goals yet",
-                subtitle = "Plan emergency funds, travel goals, or major purchases.",
-                actionLabel = "Create Goal",
-                onAction = onAddGoal,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-            ) {
-                items(state.goals, key = { it.id }) { goal ->
-                    val progress = (goal.currentAmount.toFloat() / goal.targetAmount.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
-                    Card(
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEditGoal(goal.id) },
-                    ) {
-                        Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(goal.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                                Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-                            }
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = FinLedgerTheme.colors.dividerSoft,
-                            )
-                            Text(
-                                text = "${MoneyFormatter.format(goal.currentAmount, state.primaryCurrency)} of ${MoneyFormatter.format(goal.targetAmount, state.primaryCurrency)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = FinLedgerTheme.colors.inkMuted48,
-                            )
-                            goal.targetDate?.let {
-                                Text("Target: ${DateFormatter.formatDate(it)}", style = MaterialTheme.typography.labelMedium, color = FinLedgerTheme.colors.inkMuted48)
-                            }
-                            OutlinedButton(
-                                onClick = { contributeGoalId = goal.id },
-                                shape = MaterialTheme.shapes.extraLarge,
-                            ) { Text("+ Add Contribution") }
+        SavingsGoalsContent(
+            onAddGoal = onAddGoal,
+            onEditGoal = onEditGoal,
+            snackbarHostState = snackbarHostState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            viewModel = viewModel,
+        )
+    }
+}
+
+@Composable
+fun SavingsGoalsContent(
+    onAddGoal: () -> Unit,
+    onEditGoal: (Long) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+    viewModel: BudgetsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var contributeGoalId by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearError()
+        }
+    }
+
+    if (state.goals.isEmpty()) {
+        EmptyStateView(
+            icon = Icons.Outlined.Savings,
+            title = "No savings goals yet",
+            subtitle = "Plan emergency funds, travel goals, or major purchases.",
+            actionLabel = "Create Goal",
+            onAction = onAddGoal,
+            modifier = modifier,
+        )
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            items(state.goals, key = { it.id }) { goal ->
+                val progress = (goal.currentAmount.toFloat() / goal.targetAmount.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onEditGoal(goal.id) },
+                ) {
+                    Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(goal.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
                         }
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = FinLedgerTheme.colors.dividerSoft,
+                        )
+                        Text(
+                            text = "${MoneyFormatter.format(goal.currentAmount, state.primaryCurrency)} of ${MoneyFormatter.format(goal.targetAmount, state.primaryCurrency)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FinLedgerTheme.colors.inkMuted48,
+                        )
+                        goal.targetDate?.let {
+                            Text("Target: ${DateFormatter.formatDate(it)}", style = MaterialTheme.typography.labelMedium, color = FinLedgerTheme.colors.inkMuted48)
+                        }
+                        OutlinedButton(
+                            onClick = { contributeGoalId = goal.id },
+                            shape = MaterialTheme.shapes.extraLarge,
+                        ) { Text("+ Add Contribution") }
                     }
                 }
             }

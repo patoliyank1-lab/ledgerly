@@ -13,19 +13,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.finledger.domain.model.MonthlySummary
+import com.finledger.domain.usecase.NetWorthBreakdown
 import com.finledger.domain.util.DateFormatter
 import com.finledger.domain.util.MoneyFormatter
 import com.finledger.ui.theme.FinLedgerTheme
 import com.finledger.ui.theme.Spacing
 
 /**
- * Full-bleed dark tile showing monthly income, personal spending, and savings
- * (DESIGN.md alternating white ↔ near-black tile rhythm).
+ * Full-bleed dark tile showing monthly income, personal spending, and savings rate
+ * (DESIGN.md alternating white ↔ near-black tile rhythm), plus optional liquid/debt note.
  */
 @Composable
 fun MonthlySummaryCard(
     summary: MonthlySummary,
     currency: String,
+    netWorth: NetWorthBreakdown? = null,
+    showHealthNote: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -90,6 +93,19 @@ fun MonthlySummaryCard(
                         color = FinLedgerTheme.colors.skyLinkBlue,
                     )
                 }
+            }
+            if (showHealthNote && netWorth != null) {
+                val debtRatio = if (netWorth.totalAssets > 0) {
+                    ((netWorth.totalLiabilities * 100) / netWorth.totalAssets).toInt()
+                } else {
+                    0
+                }
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                Text(
+                    text = "Liquid cash: ${MoneyFormatter.format(netWorth.cashAndBankAssets, currency)} · Debt-to-Asset: $debtRatio%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = FinLedgerTheme.colors.bodyMuted,
+                )
             }
         }
     }

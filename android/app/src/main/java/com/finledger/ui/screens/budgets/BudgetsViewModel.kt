@@ -14,6 +14,8 @@ import com.finledger.domain.usecase.BudgetProgress
 import com.finledger.domain.usecase.CreateBudgetUseCase
 import com.finledger.domain.usecase.CreateSavingsGoalUseCase
 import com.finledger.domain.usecase.GetBudgetProgressUseCase
+import com.finledger.domain.usecase.SuggestBudgetsFromHistoryUseCase
+import com.finledger.domain.usecase.SuggestedBudget
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,6 +27,7 @@ import javax.inject.Inject
 
 data class BudgetsUiState(
     val budgets: List<BudgetProgress> = emptyList(),
+    val suggestedBudgets: List<SuggestedBudget> = emptyList(),
     val goals: List<SavingsGoalEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
     val primaryCurrency: String = "INR",
@@ -34,6 +37,7 @@ data class BudgetsUiState(
 @HiltViewModel
 class BudgetsViewModel @Inject constructor(
     getBudgetProgressUseCase: GetBudgetProgressUseCase,
+    suggestBudgetsFromHistoryUseCase: SuggestBudgetsFromHistoryUseCase,
     private val createBudgetUseCase: CreateBudgetUseCase,
     private val createSavingsGoalUseCase: CreateSavingsGoalUseCase,
     private val commitmentRepository: CommitmentRepository,
@@ -44,14 +48,17 @@ class BudgetsViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
 
     val uiState: StateFlow<BudgetsUiState> = combine(
-        getBudgetProgressUseCase(),
+        combine(getBudgetProgressUseCase(), suggestBudgetsFromHistoryUseCase()) { budgets, suggestions ->
+            budgets to suggestions
+        },
         commitmentRepository.observeSavingsGoals(),
         categoryRepository.observeByType(CategoryType.EXPENSE),
         userPreferencesRepository.preferences,
         _error,
-    ) { budgets, goals, categories, prefs, err ->
+    ) { (budgets, suggestions), goals, categories, prefs, err ->
         BudgetsUiState(
             budgets = budgets,
+            suggestedBudgets = suggestions,
             goals = goals,
             categories = categories,
             primaryCurrency = prefs.primaryCurrency,
@@ -87,6 +94,35 @@ class BudgetsViewModel @Inject constructor(
                 _error.value = null
                 onSuccess()
             }.onFailure { _error.value = it.message }
+        }
+    }
+
+    fun createSuggestedBudgets(selectedCategoryIds: Set<Long>, onCreated: (Int) -> Unit = {}) {
+        viewModelScope.launch {
+            val snapshot = uiState.value
+            val targets = snapshot.suggestedBudgets.filter { it.categoryId in selectedCategoryIds }
+            if (targets.isEmpty()) return@launch
+
+            val now = System.currentTimeMillis()
+            var createdCount = 0
+            var firstError: String? = null
+            for (suggestion in targets) {
+                val entity = BudgetEntity(
+                    name = suggestion.categoryName,
+                    amount = suggestion.suggestedLimitPaise,
+                    currency = snapshot.primaryCurrency,
+                    period = BudgetPeriod.MONTHLY,
+                    startDate = now,
+                    categoryId = suggestion.categoryId,
+                    alertThreshold = 80,
+                    isRollover = false,
+                )
+                createBudgetUseCase(entity)
+                    .onSuccess { createdCount++ }
+                    .onFailure { if (firstError == null) firstError = it.message }
+            }
+            _error.value = firstError
+            if (createdCount > 0) onCreated(createdCount)
         }
     }
 

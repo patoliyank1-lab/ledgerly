@@ -165,6 +165,55 @@ object ImportValidator {
         )
         return AnalyzedImportRow(rowNumber, cols, ImportRowStatus.VALID, null, entity)
     }
+
+    fun autoDetectMapping(headers: List<String>): ColumnMapping {
+        val lowerHeaders = headers.map { it.lowercase() }
+        val dateIdx = lowerHeaders.indexOfFirst { it.contains("date") }.takeIf { it >= 0 } ?: 0
+        val amountIdx = lowerHeaders.indexOfFirst { it.contains("amount") || it.contains("value") }.takeIf { it >= 0 }
+            ?: 1.coerceAtMost((headers.size - 1).coerceAtLeast(0))
+        val typeIdx = lowerHeaders.indexOfFirst {
+            it.contains("type") || it.contains("dr/cr") || it.contains("credit")
+        }.takeIf { it >= 0 }
+        val merchantIdx = lowerHeaders.indexOfFirst {
+            it.contains("merchant") || it.contains("payee") || it.contains("party")
+        }.takeIf { it >= 0 } ?: if (headers.size > 2) 2 else null
+        val descIdx = lowerHeaders.indexOfFirst {
+            it.contains("desc") || it.contains("narration") || it.contains("particular")
+        }.takeIf { it >= 0 } ?: if (headers.size > 3) 3 else null
+        val notesIdx = lowerHeaders.indexOfFirst {
+            it.contains("note") || it.contains("remark")
+        }.takeIf { it >= 0 }
+
+        return ColumnMapping(
+            dateIndex = dateIdx,
+            amountIndex = amountIdx,
+            typeIndex = typeIdx,
+            merchantIndex = merchantIdx,
+            descriptionIndex = descIdx,
+            notesIndex = notesIdx,
+        )
+    }
+
+    fun isMappingConfident(table: CsvTable, mapping: ColumnMapping): Boolean {
+        if (table.headers.size < 2 || table.rows.isEmpty()) return false
+        if (mapping.dateIndex == mapping.amountIndex) return false
+        if (mapping.dateIndex !in table.headers.indices || mapping.amountIndex !in table.headers.indices) return false
+
+        val dateHeader = table.headers[mapping.dateIndex].lowercase()
+        val amountHeader = table.headers[mapping.amountIndex].lowercase()
+        val hasExplicitDateHeader = dateHeader.contains("date")
+        val hasExplicitAmountHeader = amountHeader.contains("amount") || amountHeader.contains("value")
+        if (!hasExplicitDateHeader || !hasExplicitAmountHeader) return false
+
+        return table.rows.take(10).anyIndexed { idx, cols ->
+            validateRow(idx + 1, cols, mapping, targetAccountId = 1L, currency = "INR").status == ImportRowStatus.VALID
+        }
+    }
+
+    private inline fun <T> List<T>.anyIndexed(predicate: (Int, T) -> Boolean): Boolean {
+        forEachIndexed { index, item -> if (predicate(index, item)) return true }
+        return false
+    }
 }
 
 class DuplicateDetector @Inject constructor(

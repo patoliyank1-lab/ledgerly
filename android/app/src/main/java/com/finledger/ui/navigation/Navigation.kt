@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,6 +38,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.finledger.domain.model.UserPreferences
 import com.finledger.ui.screens.accounts.AccountDetailScreen
 import com.finledger.ui.screens.accounts.AccountsScreen
 import com.finledger.ui.screens.analytics.AnalyticsScreen
@@ -48,7 +51,6 @@ import com.finledger.ui.screens.budgets.AddEditGoalScreen
 import com.finledger.ui.screens.budgets.BudgetsScreen
 import com.finledger.ui.screens.budgets.SavingsGoalsScreen
 import com.finledger.ui.screens.dashboard.DashboardScreen
-import com.finledger.ui.screens.data.ArchiveScreen
 import com.finledger.ui.screens.data.AuditHistoryScreen
 import com.finledger.ui.screens.data.ColumnMapperScreen
 import com.finledger.ui.screens.data.DocumentVaultScreen
@@ -57,15 +59,15 @@ import com.finledger.ui.screens.data.ImportExportScreen
 import com.finledger.ui.screens.data.ImportHistoryScreen
 import com.finledger.ui.screens.data.ImportPreviewScreen
 import com.finledger.ui.screens.data.ImportResultScreen
+import com.finledger.ui.screens.data.RecoveryScreen
 import com.finledger.ui.screens.data.RestoreScreen
-import com.finledger.ui.screens.data.TrashScreen
 import com.finledger.ui.screens.events.AddSharedExpenseScreen
 import com.finledger.ui.screens.events.CreateEditEventScreen
 import com.finledger.ui.screens.events.EventDetailScreen
 import com.finledger.ui.screens.events.EventSummaryScreen
 import com.finledger.ui.screens.events.EventsScreen
-import com.finledger.ui.screens.friends.BalancesScreen
 import com.finledger.ui.screens.friends.FriendsScreen
+import com.finledger.ui.screens.friends.PeopleHubScreen
 import com.finledger.ui.screens.friends.PersonDetailScreen
 import com.finledger.ui.screens.friends.RecordSettlementScreen
 import com.finledger.ui.screens.groups.CreateEditGroupScreen
@@ -78,6 +80,7 @@ import com.finledger.ui.screens.loans.AddLoanScreen
 import com.finledger.ui.screens.loans.LoanDetailScreen
 import com.finledger.ui.screens.loans.LoansScreen
 import com.finledger.ui.screens.loans.RecordRepaymentScreen
+import com.finledger.ui.screens.plan.PlanHubScreen
 import com.finledger.ui.screens.security.OnboardingFlow
 import com.finledger.ui.screens.security.PinLockSettingsScreen
 import com.finledger.ui.screens.settings.ManageCategoriesScreen
@@ -95,6 +98,7 @@ import com.finledger.ui.theme.Spacing
 @Composable
 fun FinLedgerNavHost(
     navController: NavHostController,
+    preferences: UserPreferences = UserPreferences(),
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -119,9 +123,20 @@ fun FinLedgerNavHost(
                 },
                 onOpenTransaction = { id -> navController.navigate(Screen.TransactionDetail.createRoute(id)) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
+                onOpenMore = { navController.navigate(Screen.More.route) },
+                onOpenAccounts = { navController.navigate(Screen.Accounts.route) },
                 onOpenBills = { navController.navigate(Screen.Bills.route) },
                 onOpenBudgets = { navController.navigate(Screen.Budgets.route) },
-                onOpenBalances = { navController.navigate(Screen.Balances.route) },
+                onOpenBackup = { navController.navigate(Screen.ImportExport.route) },
+                onOpenBalances = {
+                    navController.navigate(Screen.People.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 onOpenNetWorth = { navController.navigate(Screen.NetWorth.route) },
                 onOpenInvestments = { navController.navigate(Screen.Investments.route) },
             )
@@ -132,11 +147,13 @@ fun FinLedgerNavHost(
                 onAddIncome = { navController.navigate(Screen.QuickAdd.createRoute("INCOME")) },
                 onAddTransfer = { navController.navigate(Screen.QuickAdd.createRoute("TRANSFER")) },
                 onOpenTransactionDetail = { id -> navController.navigate(Screen.TransactionDetail.createRoute(id)) },
+                onEditTransaction = { id -> navController.navigate(Screen.EditTransaction.createRoute(id)) },
             )
         }
         composable(Screen.Accounts.route) {
             AccountsScreen(
                 onOpenAccountDetail = { id -> navController.navigate(Screen.AccountDetail.createRoute(id)) },
+                onBack = { navController.popBackStack() },
             )
         }
         composable(Screen.Friends.route) {
@@ -144,8 +161,36 @@ fun FinLedgerNavHost(
                 onOpenPersonDetail = { id -> navController.navigate(Screen.PersonDetail.createRoute(id)) },
             )
         }
+        composable(Screen.Plan.route) {
+            PlanHubScreen(
+                onAddBudget = { navController.navigate(Screen.AddEditBudget.createRoute()) },
+                onEditBudget = { bid -> navController.navigate(Screen.AddEditBudget.createRoute(budgetId = bid)) },
+                onAddBill = { navController.navigate(Screen.AddEditBill.createRoute()) },
+                onEditBill = { bid -> navController.navigate(Screen.AddEditBill.createRoute(billId = bid)) },
+                onAddGoal = { navController.navigate(Screen.AddEditGoal.createRoute()) },
+                onEditGoal = { gid -> navController.navigate(Screen.AddEditGoal.createRoute(goalId = gid)) },
+            )
+        }
+        composable(Screen.People.route) {
+            PeopleHubScreen(
+                trackSharedAndPeople = preferences.trackSharedAndPeople,
+                trackLoans = preferences.trackLoans,
+                isSimpleMode = preferences.isSimpleMode,
+                onOpenPersonDetail = { id -> navController.navigate(Screen.PersonDetail.createRoute(id)) },
+                onCreateGroup = { navController.navigate(Screen.CreateEditGroup.createRoute()) },
+                onOpenGroupDetail = { id -> navController.navigate(Screen.GroupDetail.createRoute(id)) },
+                onCreateEvent = { navController.navigate(Screen.CreateEditEvent.createRoute()) },
+                onOpenEvent = { id -> navController.navigate(Screen.EventDetail.createRoute(id)) },
+                onAddLoan = { navController.navigate(Screen.AddLoan.route) },
+                onOpenLoanDetail = { id -> navController.navigate(Screen.LoanDetail.createRoute(id)) },
+            )
+        }
         composable(Screen.More.route) {
-            MoreHubScreen(onNavigate = { route -> navController.navigate(route) })
+            MoreHubScreen(
+                preferences = preferences,
+                onNavigate = { route -> navController.navigate(route) },
+                onBack = { navController.popBackStack() },
+            )
         }
 
         // Phase 1 routes
@@ -176,6 +221,7 @@ fun FinLedgerNavHost(
                 transactionId = id,
                 onBack = { navController.popBackStack() },
                 onEdit = { txId -> navController.navigate(Screen.EditTransaction.createRoute(txId)) },
+                onOpenDocument = { docId -> navController.navigate(Screen.DocumentViewer.createRoute(docId)) },
             )
         }
         composable(
@@ -206,8 +252,7 @@ fun FinLedgerNavHost(
                 onManageTags = { navController.navigate(Screen.ManageTags.route) },
                 onOpenNotifications = { navController.navigate(Screen.NotificationSettings.route) },
                 onOpenBackup = { navController.navigate(Screen.ImportExport.route) },
-                onOpenTrash = { navController.navigate(Screen.Trash.route) },
-                onOpenArchive = { navController.navigate(Screen.Archive.route) },
+                onOpenRecovery = { navController.navigate(Screen.Recovery.route) },
                 onOpenAuditHistory = { navController.navigate(Screen.AuditHistory.route) },
                 onSetupPin = { navController.navigate(Screen.PinLock.route) },
             )
@@ -374,10 +419,9 @@ fun FinLedgerNavHost(
             )
         }
         composable(Screen.Balances.route) {
-            BalancesScreen(
-                onBack = { navController.popBackStack() },
+            FriendsScreen(
                 onOpenPersonDetail = { pid -> navController.navigate(Screen.PersonDetail.createRoute(pid)) },
-                onRecordSettlement = { navController.navigate(Screen.RecordSettlement.createRoute()) },
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -513,6 +557,7 @@ fun FinLedgerNavHost(
             ImportExportScreen(
                 onBack = { navController.popBackStack() },
                 onOpenColumnMapper = { navController.navigate(Screen.ColumnMapper.route) },
+                onOpenImportPreview = { navController.navigate(Screen.ImportPreview.route) },
                 onOpenImportHistory = { navController.navigate(Screen.ImportHistory.route) },
                 onOpenRestore = { navController.navigate(Screen.Restore.route) },
             )
@@ -520,12 +565,17 @@ fun FinLedgerNavHost(
         composable(Screen.ColumnMapper.route) {
             ColumnMapperScreen(
                 onBack = { navController.popBackStack() },
-                onPreviewReady = { navController.navigate(Screen.ImportPreview.route) },
+                onPreviewReady = {
+                    navController.navigate(Screen.ImportPreview.route) {
+                        popUpTo(Screen.ImportPreview.route) { inclusive = true }
+                    }
+                },
             )
         }
         composable(Screen.ImportPreview.route) {
             ImportPreviewScreen(
                 onBack = { navController.popBackStack() },
+                onChangeColumns = { navController.navigate(Screen.ColumnMapper.route) },
                 onCommitted = { navController.navigate(Screen.ImportResult.route) },
             )
         }
@@ -558,14 +608,17 @@ fun FinLedgerNavHost(
                 onBack = { navController.popBackStack() },
             )
         }
+        composable(Screen.Recovery.route) {
+            RecoveryScreen(initialTab = 0, onBack = { navController.popBackStack() })
+        }
         composable(Screen.Trash.route) {
-            TrashScreen(onBack = { navController.popBackStack() })
+            RecoveryScreen(initialTab = 0, onBack = { navController.popBackStack() })
         }
         composable(Screen.AuditHistory.route) {
             AuditHistoryScreen(onBack = { navController.popBackStack() })
         }
         composable(Screen.Archive.route) {
-            ArchiveScreen(onBack = { navController.popBackStack() })
+            RecoveryScreen(initialTab = 1, onBack = { navController.popBackStack() })
         }
 
         // Security & Onboarding
@@ -578,44 +631,99 @@ fun FinLedgerNavHost(
     }
 }
 
-private data class MoreMenuItem(
+data class MoreMenuItem(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
     val route: String,
 )
 
+fun visibleMoreSections(prefs: UserPreferences): List<Pair<String, List<MoreMenuItem>>> {
+    val isAdvanced = !prefs.isSimpleMode
+    val showInvestments = prefs.trackInvestments || isAdvanced
+    val showPlanning = prefs.trackPlanning || isAdvanced
+    val showShared = prefs.trackSharedAndPeople || isAdvanced
+    val showLoans = prefs.trackLoans || isAdvanced
+
+    return buildList {
+        val moneyItems = buildList {
+            add(MoreMenuItem("Accounts & Wallets", "Cash, banks, wallets & cards", Icons.Outlined.AccountBalanceWallet, Screen.Accounts.route))
+            add(MoreMenuItem("Analytics & Reports", "Spending, income, cash flow", Icons.Outlined.Analytics, Screen.Analytics.route))
+            if (showInvestments) {
+                add(MoreMenuItem("Investments & Assets", "Stocks, MF, FD, gold, real estate", Icons.Outlined.TrendingUp, Screen.Investments.route))
+                add(MoreMenuItem("Net Worth", "Assets minus liabilities", Icons.Outlined.ShowChart, Screen.NetWorth.route))
+            }
+        }
+        add("Money & Insights" to moneyItems)
+
+        val peopleItems = buildList {
+            if (showShared) {
+                add(
+                    MoreMenuItem(
+                        title = "People Hub",
+                        subtitle = if (showLoans) "Friends, groups, events & loans" else "Friends, groups & events",
+                        icon = Icons.Outlined.People,
+                        route = Screen.People.route,
+                    )
+                )
+            }
+            if (isAdvanced && showShared) {
+                add(MoreMenuItem("Groups", "Shared friend & household groups", Icons.Outlined.Groups, Screen.Groups.route))
+                add(MoreMenuItem("Events", "Trips, dinners, celebrations", Icons.Outlined.Event, Screen.Events.route))
+            }
+            if (showLoans) {
+                add(MoreMenuItem("Loans", "Lent, borrowed, EMIs & repayments", Icons.Outlined.Money, Screen.Loans.route))
+            }
+        }
+        if (peopleItems.isNotEmpty()) add("Shared & Debt" to peopleItems)
+
+        val planningItems = buildList {
+            if (showPlanning) {
+                add(MoreMenuItem("Plan Hub", "Budgets, bills & savings goals", Icons.Outlined.PieChart, Screen.Plan.route))
+            }
+            if (isAdvanced && showPlanning) {
+                add(MoreMenuItem("Bills & Subscriptions", "Upcoming & recurring bills", Icons.Outlined.ReceiptLong, Screen.Bills.route))
+                add(MoreMenuItem("Budgets", "Category & period spending limits", Icons.Outlined.PieChart, Screen.Budgets.route))
+                add(MoreMenuItem("Savings Goals", "Target amounts & milestones", Icons.Outlined.Savings, Screen.SavingsGoals.route))
+            }
+            if (isAdvanced) {
+                add(MoreMenuItem("Financial Calendar", "Combined financial schedule", Icons.Outlined.CalendarMonth, Screen.FinancialCalendar.route))
+            }
+        }
+        if (planningItems.isNotEmpty()) add("Planning & Schedule" to planningItems)
+
+        val dataItems = buildList {
+            if (isAdvanced) {
+                add(MoreMenuItem("Document Vault", "Receipts, invoices, agreements", Icons.Outlined.FolderOpen, Screen.DocumentVault.route))
+                add(MoreMenuItem("Import & Backup", "CSV/JSON import & exports", Icons.Outlined.UploadFile, Screen.ImportExport.route))
+                add(MoreMenuItem("Change Log", "Audit trail of edits", Icons.Outlined.History, Screen.AuditHistory.route))
+            }
+            add(MoreMenuItem("Settings", "Profile, mode, backup, recovery & notifications", Icons.Outlined.Settings, Screen.Settings.route))
+        }
+        add("Data & Settings" to dataItems)
+    }
+}
+
 @Composable
 fun MoreHubScreen(
+    preferences: UserPreferences = UserPreferences(),
     onNavigate: (String) -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
-    val sections = listOf(
-        "Shared & Debt" to listOf(
-            MoreMenuItem("Person-wise Balances", "Consolidated receivables & payables", Icons.Outlined.AccountBalance, Screen.Balances.route),
-            MoreMenuItem("Groups", "Shared friend & household groups", Icons.Outlined.Groups, Screen.Groups.route),
-            MoreMenuItem("Events", "Trips, dinners, celebrations", Icons.Outlined.Event, Screen.Events.route),
-            MoreMenuItem("Loans", "Lent, borrowed, EMIs & repayments", Icons.Outlined.Money, Screen.Loans.route),
-        ),
-        "Planning & Insights" to listOf(
-            MoreMenuItem("Bills & Subscriptions", "Upcoming & recurring bills", Icons.Outlined.ReceiptLong, Screen.Bills.route),
-            MoreMenuItem("Budgets", "Category & period spending limits", Icons.Outlined.PieChart, Screen.Budgets.route),
-            MoreMenuItem("Savings Goals", "Target amounts & milestones", Icons.Outlined.Savings, Screen.SavingsGoals.route),
-            MoreMenuItem("Analytics & Reports", "Spending, income, cash flow", Icons.Outlined.Analytics, Screen.Analytics.route),
-            MoreMenuItem("Investments & Assets", "Stocks, MF, FD, gold, real estate", Icons.Outlined.TrendingUp, Screen.Investments.route),
-            MoreMenuItem("Net Worth", "Assets minus liabilities", Icons.Outlined.ShowChart, Screen.NetWorth.route),
-            MoreMenuItem("Financial Calendar", "Combined financial schedule", Icons.Outlined.CalendarMonth, Screen.FinancialCalendar.route),
-        ),
-        "Data & Tools" to listOf(
-            MoreMenuItem("Document Vault", "Receipts, invoices, agreements", Icons.Outlined.FolderOpen, Screen.DocumentVault.route),
-            MoreMenuItem("Settings", "Profile, currency, backup, recovery & notifications", Icons.Outlined.Settings, Screen.Settings.route),
-        ),
-    )
+    val sections = visibleMoreSections(preferences)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("More", style = MaterialTheme.typography.headlineMedium) },
+                title = { Text("More Tools", style = MaterialTheme.typography.headlineMedium) },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 ),

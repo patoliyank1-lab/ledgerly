@@ -6,6 +6,7 @@ import com.finledger.data.local.entity.NetWorthSnapshotEntity
 import com.finledger.data.repository.UserPreferencesRepository
 import com.finledger.domain.model.TransactionWithDetails
 import com.finledger.domain.usecase.*
+import com.finledger.domain.util.MoneyFormatter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +23,7 @@ data class AnalyticsUiState(
     val categoryBreakdown: List<CategorySpendingItem> = emptyList(),
     val cashFlowPoints: List<MonthlyCashFlowPoint> = emptyList(),
     val periodComparison: PeriodComparison = PeriodComparison(0, 0, 0, 0),
+    val spendingInsight: String = "",
     val agingReport: List<AgingBucketPerson> = emptyList(),
     val netWorth: NetWorthBreakdown = NetWorthBreakdown(0, 0, 0, 0, 0, 0, 0, 0, 0),
     val netWorthSnapshots: List<NetWorthSnapshotEntity> = emptyList(),
@@ -92,6 +94,7 @@ class AnalyticsViewModel @Inject constructor(
             categoryBreakdown = categories,
             cashFlowPoints = cashFlow,
             periodComparison = comparison,
+            spendingInsight = buildSpendingInsight(comparison, categories, prefs.primaryCurrency),
             agingReport = aging,
             netWorth = netWorth,
             netWorthSnapshots = snapshots,
@@ -117,5 +120,43 @@ class AnalyticsViewModel @Inject constructor(
 
     fun recordNetWorthSnapshot(breakdown: NetWorthBreakdown) {
         viewModelScope.launch { getNetWorthUseCase.recordSnapshot(breakdown) }
+    }
+
+    companion object {
+        fun buildSpendingInsight(
+            comparison: PeriodComparison,
+            categoryBreakdown: List<CategorySpendingItem>,
+            currency: String,
+        ): String {
+            val topCategory = categoryBreakdown.maxByOrNull { it.totalPaise }?.categoryName
+            val cur = comparison.currentExpense
+            val prev = comparison.previousExpense
+
+            if (cur <= 0L) {
+                return if (prev > 0L) {
+                    "No personal spending recorded yet this month (last month: ${MoneyFormatter.format(prev, currency)})."
+                } else {
+                    "Log expenses to see monthly spending insights."
+                }
+            }
+
+            if (prev <= 0L) {
+                val catNote = topCategory?.let { ", mostly on $it" }.orEmpty()
+                return "You spent ${MoneyFormatter.format(cur, currency)} this month$catNote."
+            }
+
+            if (cur == prev) {
+                return "Spending matches last month at ${MoneyFormatter.format(cur, currency)}."
+            }
+
+            val delta = cur - prev
+            val pct = ((kotlin.math.abs(delta) * 100L) / prev).toInt().coerceAtLeast(1)
+            return if (delta > 0L) {
+                val catNote = topCategory?.let { ", mostly on $it" }.orEmpty()
+                "You spent $pct% more than last month$catNote."
+            } else {
+                "Spending is down $pct% vs last month."
+            }
+        }
     }
 }

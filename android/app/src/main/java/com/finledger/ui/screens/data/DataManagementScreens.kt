@@ -3,6 +3,7 @@ package com.finledger.ui.screens.data
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -28,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +67,7 @@ import com.finledger.ui.theme.Spacing
 fun ImportExportScreen(
     onBack: () -> Unit,
     onOpenColumnMapper: () -> Unit,
+    onOpenImportPreview: () -> Unit = onOpenColumnMapper,
     onOpenImportHistory: () -> Unit,
     onOpenRestore: () -> Unit,
     viewModel: DataManagementViewModel = hiltViewModel(),
@@ -88,7 +91,11 @@ fun ImportExportScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            viewModel.loadCsvFromUri(it, onLoaded = onOpenColumnMapper)
+            viewModel.loadCsvFromUri(
+                uri = it,
+                onNeedsMapping = onOpenColumnMapper,
+                onPreviewReady = onOpenImportPreview,
+            )
         }
     }
 
@@ -145,7 +152,48 @@ fun ImportExportScreen(
                 }
             }
 
+            if (state.showBackupReminder) {
+                item {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(containerColor = FinLedgerTheme.colors.warning.copy(alpha = 0.10f)),
+                        border = BorderStroke(1.dp, FinLedgerTheme.colors.warning),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(Spacing.md),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        ) {
+                            Text("Back up your data", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = "You have ${state.activeTransactionCount} transactions saved locally. Create a JSON backup or turn on weekly auto-backup.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = FinLedgerTheme.colors.inkMuted80,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Button(
+                                    onClick = {
+                                        suppressAppLock()
+                                        jsonBackupLauncher.launch("finledger_backup.json")
+                                    },
+                                    shape = MaterialTheme.shapes.extraLarge,
+                                ) { Text("Backup Now") }
+                                TextButton(onClick = viewModel::snoozeBackupReminder) {
+                                    Text("Remind me later")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
+                Text("Import", style = MaterialTheme.typography.titleSmall, color = FinLedgerTheme.colors.inkMuted48)
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Card(
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -155,7 +203,7 @@ fun ImportExportScreen(
                     Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         Text("Import Transactions", style = MaterialTheme.typography.headlineMedium)
                         Text(
-                            text = "Select a CSV file, map columns, validate dates/amounts, and detect duplicates.",
+                            text = "Select a CSV file, map columns when needed, validate dates/amounts, and detect duplicates.",
                             style = MaterialTheme.typography.bodySmall,
                             color = FinLedgerTheme.colors.inkMuted48,
                         )
@@ -177,6 +225,8 @@ fun ImportExportScreen(
             }
 
             item {
+                Text("Export", style = MaterialTheme.typography.titleSmall, color = FinLedgerTheme.colors.inkMuted48)
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Card(
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -206,6 +256,8 @@ fun ImportExportScreen(
             }
 
             item {
+                Text("Backup & Restore", style = MaterialTheme.typography.titleSmall, color = FinLedgerTheme.colors.inkMuted48)
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Card(
                     shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -214,6 +266,34 @@ fun ImportExportScreen(
                 ) {
                     Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         Text("Full JSON Backup & Restore", style = MaterialTheme.typography.headlineMedium)
+                        state.lastBackupAtMs?.let { ts ->
+                            Text(
+                                text = "Last backup: ${DateFormatter.formatDate(ts)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = FinLedgerTheme.colors.inkMuted48,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setAutoBackupEnabled(!state.autoBackupEnabled) },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = Spacing.sm)) {
+                                Text("Weekly Scheduled Local Backup", style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    text = "Saves an offline JSON snapshot every week",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = FinLedgerTheme.colors.inkMuted48,
+                                )
+                            }
+                            Switch(
+                                checked = state.autoBackupEnabled,
+                                onCheckedChange = viewModel::setAutoBackupEnabled,
+                            )
+                        }
+                        HorizontalDivider(color = FinLedgerTheme.colors.dividerSoft)
                         Button(
                             onClick = {
                                 suppressAppLock()
@@ -282,9 +362,11 @@ fun ColumnMapperScreen(
         positiveIsIncome = state.columnMapping.positiveIsIncome
     }
 
-    LaunchedEffect(state.accounts) {
+    LaunchedEffect(state.accounts, state.importAccountId) {
         if (selectedAccountId == null && state.accounts.isNotEmpty()) {
-            selectedAccountId = state.accounts.first().account.id
+            selectedAccountId = state.importAccountId
+                ?.takeIf { id -> state.accounts.any { it.account.id == id } }
+                ?: state.accounts.first().account.id
         }
     }
 
@@ -411,6 +493,7 @@ private fun OptionalColumnChips(
 @Composable
 fun ImportPreviewScreen(
     onBack: () -> Unit,
+    onChangeColumns: () -> Unit = onBack,
     onCommitted: () -> Unit,
     viewModel: DataManagementViewModel = hiltViewModel(),
 ) {
@@ -429,6 +512,7 @@ fun ImportPreviewScreen(
     val validCount = state.analyzedRows.count { it.status == ImportRowStatus.VALID }
     val invalidCount = state.analyzedRows.count { it.status == ImportRowStatus.INVALID }
     val dupCount = state.analyzedRows.count { it.status == ImportRowStatus.DUPLICATE }
+    val targetAccountName = state.accounts.firstOrNull { it.account.id == state.importAccountId }?.account?.name
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -441,6 +525,11 @@ fun ImportPreviewScreen(
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    TextButton(onClick = onChangeColumns) {
+                        Text("Change columns")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
@@ -450,6 +539,14 @@ fun ImportPreviewScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            if (targetAccountName != null) {
+                Text(
+                    text = "Importing to: $targetAccountName",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FinLedgerTheme.colors.inkMuted48,
+                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xxs),
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

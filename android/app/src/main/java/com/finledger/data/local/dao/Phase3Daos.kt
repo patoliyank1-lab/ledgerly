@@ -108,6 +108,12 @@ interface BillDao {
 
     @Query("UPDATE bills SET isDeleted = 0 WHERE id = :id")
     suspend fun restore(id: Long)
+
+    @Query("SELECT * FROM bill_payments WHERE id = :paymentId")
+    suspend fun getPaymentById(paymentId: Long): BillPaymentEntity?
+
+    @Query("UPDATE bill_payments SET isDeleted = 1 WHERE id = :paymentId")
+    suspend fun softDeletePayment(paymentId: Long)
 }
 
 @Dao
