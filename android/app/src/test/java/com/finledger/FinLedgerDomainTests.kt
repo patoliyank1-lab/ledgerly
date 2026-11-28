@@ -17,6 +17,7 @@ import com.finledger.domain.model.QuickTemplateCodec
 import com.finledger.domain.model.QuickTransactionTemplate
 import com.finledger.domain.model.SetupChecklistState
 import com.finledger.domain.model.TransactionWithDetails
+import com.finledger.domain.model.UserPreferences
 import com.finledger.domain.usecase.*
 import com.finledger.domain.util.AmountExpressionEvaluator
 import com.finledger.domain.util.MoneyFormatter
@@ -485,7 +486,7 @@ class FinLedgerDomainTests {
         val settlement = SettlementEntity(
             id = 11L,
             personId = 5L,
-            direction = SettlementDirection.THEY_PAID_ME,
+            direction = SettlementDirection.RECEIVED,
             amount = 5000L,
             date = 1L,
             linkedTransactionId = 42L,
@@ -651,7 +652,7 @@ class FinLedgerDomainTests {
         var storedBill = BillEntity(
             id = 5L,
             name = "Fiber Internet",
-            type = BillType.UTILITY,
+            type = BillType.INTERNET,
             expectedAmount = 99_900L,
             dueDay = 10,
             frequency = BillFrequency.MONTHLY,
@@ -942,7 +943,7 @@ class FinLedgerDomainTests {
         val dueSoonBill = BillEntity(
             id = 2L,
             name = "Internet",
-            type = BillType.UTILITY,
+            type = BillType.INTERNET,
             expectedAmount = 99_900L,
             dueDay = 5,
             frequency = BillFrequency.MONTHLY,
@@ -1279,7 +1280,7 @@ class FinLedgerDomainTests {
             categoryName = "Food",
             colorHex = "#E65100",
             totalPaise = 60_000L,
-            percent = 60f,
+            percent = 60.0,
             transactionCount = 4,
         )
 
